@@ -248,22 +248,25 @@ Table~\ref{tab:rep_definitions} lists the six admissible representations used in
 \setlength{\tabcolsep}{4pt}
 \caption{Admissible feature representations.}
 \label{tab:rep_definitions}
-\begin{tabular}{p{2.2cm}p{5.0cm}p{4.2cm}p{2.8cm}}
+\begin{tabular}{p{2.4cm}p{5.2cm}p{4.0cm}p{2.2cm}}
 \toprule
-Label & Features & Windows (days) & Standardization \\
+Label & Features & Windows (days) & Std. \\
 \midrule
-rep\_a         & Vol, Drawdown, MaxDD, VaR, CVaR       & vol=20, dd=60, tail=60       & Rolling $z$-score (120d) \\
-rep\_a\_unscaled & Vol, Drawdown, MaxDD, VaR, CVaR     & vol=20, dd=60, tail=60       & None \\
-rep\_b         & RealSkew, VolStab, VaR, CVaR           & skew=60, stab=60, tail=60    & Rolling $z$-score (120d) \\
-rep\_c1        & Vol, Drawdown, VaR, CVaR               & vol=30, dd=90, tail=90       & Rolling $z$-score (120d) \\
-rep\_c2        & Vol, Drawdown, MaxDD, CVaR             & vol=20, dd=60, tail=60       & Rolling $z$-score (120d) \\
-rep\_c3        & Vol, Drawdown, VaR, CVaR               & vol=20, dd=60, tail=60       & Rolling $z$-score (120d) \\
+rep\_a         & Vol, Drawdown, MaxDD, VaR, CVaR   & vol=20, dd=60, tail=60    & $z$-120d \\
+rep\_a\_unscaled & Vol, Drawdown, MaxDD, VaR, CVaR & vol=20, dd=60, tail=60    & None \\
+rep\_b         & RealSkew, VolStab, VaR, CVaR       & skew=60, stab=60, tail=60 & $z$-120d \\
+rep\_c1        & Vol, Drawdown, VaR, CVaR           & vol=30, dd=90, tail=90    & $z$-120d \\
+rep\_c2        & Vol, Drawdown, MaxDD, CVaR         & vol=20, dd=60, tail=60    & $z$-120d \\
+rep\_c3        & Vol, Drawdown, VaR, CVaR           & vol=20, dd=60, tail=60    & $z$-120d \\
 \bottomrule
 \end{tabular}
-\medskip
+\par\medskip
+\begin{minipage}{\linewidth}
 \footnotesize
-\parbox{\linewidth}{\textit{Notes:} Vol = annualised realised volatility; Drawdown = rolling drawdown from period high; MaxDD = rolling maximum drawdown; VaR/CVaR = historical Value-at-Risk/Conditional VaR at 5\%; RealSkew = rolling realised skewness; VolStab = volatility-of-volatility (lower = more stable). All rolling standardizations use a 120-day lookback. \\
-\textit{Source:} Authors' design.}
+\textit{Notes:} Std.\ = standardization; $z$-120d = rolling $z$-score with 120-day lookback; None = no standardization. Vol = annualised realised volatility; Drawdown = rolling drawdown from period high; MaxDD = rolling maximum drawdown; VaR/CVaR = historical Value-at-Risk/Conditional VaR at 5\%; RealSkew = rolling realised skewness; VolStab = volatility-of-volatility.
+
+\textit{Source:} Authors' design.
+\end{minipage}
 \end{table}
 
 \section{Ordering Consistency}
@@ -289,10 +292,13 @@ IEF      & 0.913 & 0.886 \\
 Mean     & 0.927 & 0.895 \\
 \bottomrule
 \end{tabular}
-\medskip
+\par\medskip
+\begin{minipage}{\linewidth}
 \footnotesize
-\textit{Notes:} Top-1 Agreement = fraction of rolling windows where the highest-risk state label (by mean downside volatility) agrees across all admissible representation pairs. Spearman Rank Corr.\ = cross-representation Spearman correlation of state-level risk ordering. Both metrics are averaged across GMM and HMM models and seeds $\{1,2\}$. \\
+\textit{Notes:} Top-1 Agreement = fraction of rolling windows where the highest-risk state label (by mean downside volatility) agrees across all admissible representation pairs. Spearman Rank Corr.\ = cross-representation Spearman correlation of state-level risk ordering. Both metrics are averaged across GMM and HMM models and seeds $\{1,2\}$.
+
 \textit{Source:} Authors' calculations.
+\end{minipage}
 \end{table}
 
 \section*{Data availability}
