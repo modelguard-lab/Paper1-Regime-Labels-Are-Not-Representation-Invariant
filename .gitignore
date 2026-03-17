@@ -1,0 +1,31 @@
+### Python
+__pycache__/
+*.py[cod]
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+### Virtual environments
+.venv/
+venv/
+ENV/
+env/
+.env
+
+### Jupyter
+.ipynb_checkpoints/
+
+### Data / outputs
+data/**/*
+outputs/**/*
+
+### OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+### Word temporary files
+paper/~$*.docx
+

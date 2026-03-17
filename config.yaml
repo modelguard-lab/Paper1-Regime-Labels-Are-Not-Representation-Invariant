@@ -1,0 +1,116 @@
+raw_dir: data
+outputs_dir: outputs
+
+assets: ["IEF", "^GSPC", "GLD", "BTC-USD"]
+
+representations:
+  rep_a:
+    features: ["volatility", "drawdown", "max_drawdown_window", "var", "cvar"]
+    windows:
+      vol_window: 20
+      drawdown_window: 60
+      tail_window: 60
+      tail_alpha: 0.05
+    standardization:
+      mode: "rolling_zscore"
+      window: 120
+
+  rep_a_unscaled:
+    features: ["volatility", "drawdown", "max_drawdown_window", "var", "cvar"]
+    windows:
+      vol_window: 20
+      drawdown_window: 60
+      tail_window: 60
+      tail_alpha: 0.05
+    standardization:
+      mode: "none"
+
+  rep_b:
+    features: ["realized_skew", "stability", "var", "cvar"]
+    windows:
+      skew_window: 60
+      stability_window: 60
+      tail_window: 60
+      tail_alpha: 0.05
+    standardization:
+      mode: "rolling_zscore"
+      window: 120
+
+  rep_c1:
+    features: ["volatility", "drawdown", "var", "cvar"]
+    windows:
+      vol_window: 30
+      drawdown_window: 90
+      tail_window: 90
+      tail_alpha: 0.05
+    standardization:
+      mode: "rolling_zscore"
+      window: 120
+
+  rep_c2:
+    features: ["volatility", "drawdown", "max_drawdown_window", "cvar"]
+    windows:
+      vol_window: 20
+      drawdown_window: 60
+      tail_window: 60
+      tail_alpha: 0.05
+    standardization:
+      mode: "rolling_zscore"
+      window: 120
+
+  rep_c3:
+    features: ["volatility", "drawdown", "var", "cvar"]
+    windows:
+      vol_window: 20
+      drawdown_window: 60
+      tail_window: 60
+      tail_alpha: 0.05
+    standardization:
+      mode: "rolling_zscore"
+      window: 120
+
+models:
+  hmm:
+    enabled: true
+    covariance_type: "full"
+    n_iter: 200
+  gmm:
+    enabled: true
+    covariance_type: "full"
+    # Speed: we already sweep many random seeds; multi-init is redundant and expensive.
+    n_init: 1
+
+grid:
+  # Keep K fixed for cross-representation comparisons (state label matching).
+  n_states: [3]
+  windows: [252]
+  # Monthly update cadence (~21 trading days)
+  step: 21
+  # Step sweep for overlap sensitivity (P0 figure/table in Section 5.5)
+  step_sweep: [21, 63, 126, 252]
+  # Keep 2 seeds to control runtime under monthly rolling
+  seeds: [1, 2]
+  # Robustness sweep: distribution over random initializations and K.
+  # This uses "seeds as independent repeats" (not pair counts).
+  robustness:
+    enabled: true
+    # Speed: cover a reasonable K range without exploding runtime.
+    n_states: [2, 3, 4]
+    seeds: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+    step: 21
+  # Tune based on your machine; too high may cause overload/BSOD on some systems
+  n_jobs: 12
+
+# Optional Appendix artifact: one-page synthetic sanity check (disabled by default).
+synthetic_sanity:
+  enabled: false
+  # Data-generating process
+  T: 2200
+  K: 3
+  persistence_p: 0.97
+  drift_alpha: 0.6
+  data_seed: 123
+  # Rolling protocol
+  W: 252
+  steps: [21, 63, 126, 252]
+  seeds: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
