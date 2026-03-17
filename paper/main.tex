@@ -244,26 +244,26 @@ Table~\ref{tab:rep_definitions} lists the six admissible representations used in
 
 \begin{table}[!htbp]
 \centering
-\small
+\footnotesize
 \setlength{\tabcolsep}{4pt}
 \caption{Admissible feature representations.}
 \label{tab:rep_definitions}
-\begin{tabular}{llll}
+\begin{tabular}{p{2.2cm}p{5.0cm}p{4.2cm}p{2.8cm}}
 \toprule
 Label & Features & Windows (days) & Standardization \\
 \midrule
-rep\_a & Vol, Drawdown, MaxDD, VaR, CVaR & vol=20, dd=60, tail=60 & Rolling $z$-score (120d) \\
-rep\_a\_unscaled & Vol, Drawdown, MaxDD, VaR, CVaR & vol=20, dd=60, tail=60 & None \\
-rep\_b & RealSkew, VolStab, VaR, CVaR & skew=60, stab=60, tail=60 & Rolling $z$-score (120d) \\
-rep\_c1 & Vol, Drawdown, VaR, CVaR & vol=30, dd=90, tail=90 & Rolling $z$-score (120d) \\
-rep\_c2 & Vol, Drawdown, MaxDD, CVaR & vol=20, dd=60, tail=60 & Rolling $z$-score (120d) \\
-rep\_c3 & Vol, Drawdown, VaR, CVaR & vol=20, dd=60, tail=60 & Rolling $z$-score (120d) \\
+rep\_a         & Vol, Drawdown, MaxDD, VaR, CVaR       & vol=20, dd=60, tail=60       & Rolling $z$-score (120d) \\
+rep\_a\_unscaled & Vol, Drawdown, MaxDD, VaR, CVaR     & vol=20, dd=60, tail=60       & None \\
+rep\_b         & RealSkew, VolStab, VaR, CVaR           & skew=60, stab=60, tail=60    & Rolling $z$-score (120d) \\
+rep\_c1        & Vol, Drawdown, VaR, CVaR               & vol=30, dd=90, tail=90       & Rolling $z$-score (120d) \\
+rep\_c2        & Vol, Drawdown, MaxDD, CVaR             & vol=20, dd=60, tail=60       & Rolling $z$-score (120d) \\
+rep\_c3        & Vol, Drawdown, VaR, CVaR               & vol=20, dd=60, tail=60       & Rolling $z$-score (120d) \\
 \bottomrule
 \end{tabular}
 \medskip
 \footnotesize
-\textit{Notes:} Vol = annualised realised volatility; Drawdown = rolling drawdown from period high; MaxDD = rolling maximum drawdown; VaR/CVaR = historical Value-at-Risk/Conditional VaR at 5\%; RealSkew = rolling realised skewness; VolStab = volatility-of-volatility (lower = more stable). All rolling standardizations use a 120-day lookback. Representations vary along three axes: feature composition (downside-risk focus vs.\ distributional shape), rolling horizon (20/60d vs.\ 30/90d), and standardization (rolling $z$-score vs.\ raw). \\
-\textit{Source:} Authors' design.
+\parbox{\linewidth}{\textit{Notes:} Vol = annualised realised volatility; Drawdown = rolling drawdown from period high; MaxDD = rolling maximum drawdown; VaR/CVaR = historical Value-at-Risk/Conditional VaR at 5\%; RealSkew = rolling realised skewness; VolStab = volatility-of-volatility (lower = more stable). All rolling standardizations use a 120-day lookback. \\
+\textit{Source:} Authors' design.}
 \end{table}
 
 \section{Ordering Consistency}
