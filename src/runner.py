@@ -614,6 +614,8 @@ def _compute_rep_stability_from_map(
                                 "roll": roll,
                                 "ari": scores.ari,
                                 "nmi": scores.nmi,
+                                "ami": scores.ami,
+                                "vi": scores.vi,
                             }
                         )
     return records
@@ -651,6 +653,8 @@ def _compute_window_stability_from_map(
                             "roll_b": roll_b,
                             "ari": scores.ari,
                             "nmi": scores.nmi,
+                            "ami": scores.ami,
+                            "vi": scores.vi,
                         }
                     )
     return records
@@ -1194,15 +1198,16 @@ def _write_key_outputs(
                     "n": int(len(rep_df)),
                 }
             )
-            if "nmi" in rep_df.columns:
-                rows.append(
-                    {
-                        "metric": "cross_rep_nmi_mean",
-                        "scope": "all",
-                        "value": _mean_or_nan(rep_df["nmi"]),
-                        "n": int(len(rep_df)),
-                    }
-                )
+            for metric_col in ("nmi", "ami", "vi"):
+                if metric_col in rep_df.columns:
+                    rows.append(
+                        {
+                            "metric": f"cross_rep_{metric_col}_mean",
+                            "scope": "all",
+                            "value": _mean_or_nan(rep_df[metric_col]),
+                            "n": int(len(rep_df)),
+                        }
+                    )
             if "model" in rep_df.columns:
                 for model_name, g in rep_df.groupby("model"):
                     rows.append(
@@ -1213,15 +1218,16 @@ def _write_key_outputs(
                             "n": int(len(g)),
                         }
                     )
-                    if "nmi" in g.columns:
-                        rows.append(
-                            {
-                                "metric": "cross_rep_nmi_mean",
-                                "scope": f"model={model_name}",
-                                "value": _mean_or_nan(g["nmi"]),
-                                "n": int(len(g)),
-                            }
-                        )
+                    for metric_col in ("nmi", "ami", "vi"):
+                        if metric_col in g.columns:
+                            rows.append(
+                                {
+                                    "metric": f"cross_rep_{metric_col}_mean",
+                                    "scope": f"model={model_name}",
+                                    "value": _mean_or_nan(g[metric_col]),
+                                    "n": int(len(g)),
+                                }
+                            )
 
             # Ablation: rep_a vs rep_a_unscaled
             if "rep_a_unscaled" in set(rep_df["rep_a"]) | set(rep_df["rep_b"]):
@@ -1262,6 +1268,16 @@ def _write_key_outputs(
                     "n": int(len(tmp)),
                 }
             )
+            for metric_col in ("ami", "vi"):
+                if metric_col in tmp.columns:
+                    rows.append(
+                        {
+                            "metric": f"temporal_{metric_col}_mean",
+                            "scope": "all",
+                            "value": _mean_or_nan(tmp[metric_col]),
+                            "n": int(len(tmp)),
+                        }
+                    )
             if "model" in tmp.columns:
                 for model_name, g in tmp.groupby("model"):
                     rows.append(
@@ -1272,6 +1288,16 @@ def _write_key_outputs(
                             "n": int(len(g)),
                         }
                     )
+                    for metric_col in ("ami", "vi"):
+                        if metric_col in g.columns:
+                            rows.append(
+                                {
+                                    "metric": f"temporal_{metric_col}_mean",
+                                    "scope": f"model={model_name}",
+                                    "value": _mean_or_nan(g[metric_col]),
+                                    "n": int(len(g)),
+                                }
+                            )
 
     # Semantic consistency (return-distribution profiles; 1D Wasserstein + matching)
     if not semantic.empty and "wasserstein" in semantic.columns and "kind" in semantic.columns:

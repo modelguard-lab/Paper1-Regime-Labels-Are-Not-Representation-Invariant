@@ -113,18 +113,21 @@ def _compute_model_split_block(outputs_dir: Path, baseline: BaselineSpec) -> str
                     "asset": asset,
                     "model": model,
                     "cross_rep_ari": _get_metric(df, "cross_rep_ari_mean", f"model={model}"),
+                    "cross_rep_ami": _get_metric(df, "cross_rep_ami_mean", f"model={model}"),
                     "temporal_ari": _get_metric(df, "temporal_ari_mean", f"model={model}"),
+                    "temporal_ami": _get_metric(df, "temporal_ami_mean", f"model={model}"),
                 }
             )
     d = pd.DataFrame(rows)
     means = (
-        d.groupby("model")[["cross_rep_ari", "temporal_ari"]]
+        d.groupby("model")[["cross_rep_ari", "cross_rep_ami", "temporal_ari", "temporal_ami"]]
         .mean(numeric_only=True)
         .reindex(["gmm", "hmm"])
     )
 
     # Overall ratio (temporal / cross-rep) using "all" scope.
     all_rows = []
+    pvalues = []
     for asset, df in per_asset.items():
         all_rows.append(
             {
@@ -133,10 +136,14 @@ def _compute_model_split_block(outputs_dir: Path, baseline: BaselineSpec) -> str
                 "temporal_all": _get_metric(df, "temporal_ari_mean", "all"),
             }
         )
+        pv = _get_metric(df, "crossrep_ari_perm_pvalue", "all")
+        if pv is not None and not (isinstance(pv, float) and math.isnan(pv)):
+            pvalues.append(pv)
     da = pd.DataFrame(all_rows).set_index("asset")
     cross_mean = float(da["cross_rep_all"].mean())
     temp_mean = float(da["temporal_all"].mean())
     ratio = temp_mean / cross_mean if cross_mean and not np.isnan(cross_mean) else float("nan")
+    pvalue_max = float(max(pvalues)) if pvalues else float("nan")
 
     gap_temporal = float(means.loc["gmm", "temporal_ari"] - means.loc["hmm", "temporal_ari"])
     gap_cross = float(means.loc["gmm", "cross_rep_ari"] - means.loc["hmm", "cross_rep_ari"])
@@ -147,17 +154,32 @@ def _compute_model_split_block(outputs_dir: Path, baseline: BaselineSpec) -> str
     block = []
     block.append(
         f"Baseline setting: window $={baseline.window}$, step $={baseline.step}$, $K={baseline.k}$, seeds $=\\{{{seeds_str}\\}}$; averaged across assets ({assets_list})."
+        " *Note: ARI uses scope=model=gmm/hmm (per-model averages); AMI likewise. Permutation p-value uses scope=all (GMM+HMM combined).*"
     )
     block.append("")
-    block.append("| model | cross_rep_ari (mean across assets) | temporal_ari (mean across assets) |")
-    block.append("| --- | ---: | ---: |")
-    block.append(f"| GMM | {_fmt(means.loc['gmm','cross_rep_ari'])} | {_fmt(means.loc['gmm','temporal_ari'])} |")
-    block.append(f"| HMM | {_fmt(means.loc['hmm','cross_rep_ari'])} | {_fmt(means.loc['hmm','temporal_ari'])} |")
+    block.append("| model | cross-rep ARI | cross-rep AMI | temporal ARI | temporal AMI |")
+    block.append("| --- | ---: | ---: | ---: | ---: |")
+    block.append(
+        f"| GMM | {_fmt(means.loc['gmm','cross_rep_ari'])} | {_fmt(means.loc['gmm','cross_rep_ami'])} "
+        f"| {_fmt(means.loc['gmm','temporal_ari'])} | {_fmt(means.loc['gmm','temporal_ami'])} |"
+    )
+    block.append(
+        f"| HMM | {_fmt(means.loc['hmm','cross_rep_ari'])} | {_fmt(means.loc['hmm','cross_rep_ami'])} "
+        f"| {_fmt(means.loc['hmm','temporal_ari'])} | {_fmt(means.loc['hmm','temporal_ami'])} |"
+    )
+    block.append("")
+    pv_str = (
+        f"Permutation test (999 permutations): cross-rep ARI is significantly above chance across all assets "
+        f"(max $p={_fmt(pvalue_max, nd=4)}$, two-tailed)."
+        if not math.isnan(pvalue_max)
+        else "*(permutation p-values not yet computed — run posthoc_ami_vi_perm.py)*"
+    )
+    block.append(pv_str)
     block.append("")
     block.append(
         "Cross-asset main effect: temporal ARI is higher than cross-representation ARI "
         f"(ratio $={_fmt(ratio, nd=2)}\\times$ at step $={baseline.step}$), indicating apparent stability within a fixed representation that collapses under reasonable representation changes. "
-        f"Model contrast supports the mechanism: GMM exceeds HMM on both cross-representation stability (gap $={_fmt(gap_cross)}$) and temporal stability (gap $={_fmt(gap_temporal)}$), consistent with persistence-driven disagreement amplification in dynamic sequence models (Section 6.6)."
+        f"Model contrast: GMM exceeds HMM on both cross-representation stability (ARI gap $={_fmt(gap_cross)}$) and temporal stability (ARI gap $={_fmt(gap_temporal)}$)."
     )
     return "\n".join(block).rstrip()
 

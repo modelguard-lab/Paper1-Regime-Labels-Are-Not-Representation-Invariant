@@ -7,7 +7,13 @@ from typing import Iterable
 import numpy as np
 import pandas as pd
 from scipy.optimize import linear_sum_assignment
-from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score
+from scipy.stats import entropy as _scipy_entropy
+from sklearn.metrics import (
+    adjusted_mutual_info_score,
+    adjusted_rand_score,
+    mutual_info_score,
+    normalized_mutual_info_score,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +22,20 @@ logger = logging.getLogger(__name__)
 class StabilityScores:
     ari: float
     nmi: float
+    ami: float
+    vi: float
+
+
+def variation_of_information(a: np.ndarray, b: np.ndarray) -> float:
+    """Variation of Information = H(X|Y) + H(Y|X), in nats."""
+    if len(a) == 0:
+        return float("nan")
+    mi = float(mutual_info_score(a, b))
+    _, ca = np.unique(a, return_counts=True)
+    _, cb = np.unique(b, return_counts=True)
+    h_a = float(_scipy_entropy(ca))  # natural log, nats
+    h_b = float(_scipy_entropy(cb))
+    return h_a + h_b - 2.0 * mi
 
 
 def align_states(reference: np.ndarray, target: np.ndarray, n_states: int) -> np.ndarray:
@@ -46,11 +66,11 @@ def stability_metrics(labels_a: pd.Series, labels_b: pd.Series, n_states: int) -
     ab = pd.concat([labels_a, labels_b], axis=1, join="inner")
     if ab.empty:
         logger.warning("No common index between state sequences for stability_metrics")
-        return StabilityScores(ari=float("nan"), nmi=float("nan"))
+        return StabilityScores(ari=float("nan"), nmi=float("nan"), ami=float("nan"), vi=float("nan"))
     ab = ab.dropna()
     if ab.empty:
         logger.warning("No non-NA overlap between state sequences for stability_metrics")
-        return StabilityScores(ari=float("nan"), nmi=float("nan"))
+        return StabilityScores(ari=float("nan"), nmi=float("nan"), ami=float("nan"), vi=float("nan"))
 
     a = ab.iloc[:, 0].astype(int).to_numpy()
     b = ab.iloc[:, 1].astype(int).to_numpy()
@@ -64,6 +84,8 @@ def stability_metrics(labels_a: pd.Series, labels_b: pd.Series, n_states: int) -
     return StabilityScores(
         ari=float(adjusted_rand_score(a, b)),
         nmi=float(normalized_mutual_info_score(a, b)),
+        ami=float(adjusted_mutual_info_score(a, b)),
+        vi=float(variation_of_information(a, b)),
     )
 
 
