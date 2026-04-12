@@ -29,13 +29,13 @@ def main() -> None:
         key_df = pd.read_csv(key_results_path)
         plot_ari_gap_distribution_from_key_results(
             key_df,
-            paper_dir / "fig_ari_gap_distribution.png",
+            outputs_dir / "fig_ari_gap_distribution.png",
             title="Temporal-minus-cross ARI across assets and models",
         )
         # Figure 2: grouped bar of cross-rep vs temporal ARI by model class.
         plot_model_split_grouped_bar_from_key_results(
             key_df,
-            paper_dir / "fig_ari_gap_by_model.png",
+            outputs_dir / "fig_ari_gap_by_model.png",
             title="Cross-representation vs temporal ARI by model class",
         )
 
@@ -54,7 +54,7 @@ def main() -> None:
             if not pairs.empty:
                 plot_pairwise_matrix_heatmap(
                     pairs,
-                    paper_dir / "fig_pairwise_ari_heatmap.png",
+                    outputs_dir / "fig_pairwise_ari_heatmap.png",
                     value_col="ari",
                     title="Pairwise ARI across representations (GMM, S&P 500, K=3)",
                 )

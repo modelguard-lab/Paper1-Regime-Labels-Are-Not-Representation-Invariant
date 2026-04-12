@@ -250,7 +250,7 @@ def plot_representation_failure_matrix(
     # =========================================================================
     # Figure 1: Conflict view (Paper 1)
     # =========================================================================
-    fig_conf, ax = plt.subplots(figsize=(6.4, 3.6), dpi=200)
+    fig_conf, ax = plt.subplots(figsize=(6.4, 3.6), dpi=300)
 
     ax.plot(price_win.index, price_win.values, color="black", linewidth=1.2, zorder=3)
     ax.set_title(title_left, fontsize=11)
@@ -330,27 +330,27 @@ def plot_representation_failure_matrix(
 
     # --- Grouped legend (3 blocks) ---
     legend_elements = [
-        Patch(facecolor="none", edgecolor="none", label="Layer A (returns-based)"),
+        Patch(facecolor="none", edgecolor="none", label="rep_a"),
         Patch(
             facecolor=_color_for_level("on", "returns"),
             edgecolor="none",
-            label=" risk-on",
+            label=" low-risk",
         ),
         Patch(
             facecolor=_color_for_level("off", "returns"),
             edgecolor="none",
-            label=" risk-off",
+            label=" high-risk",
         ),
-        Patch(facecolor="none", edgecolor="none", label="Layer B (risk-based)"),
+        Patch(facecolor="none", edgecolor="none", label="rep_c1"),
         Patch(
             facecolor=_color_for_level("on", "risk"),
             edgecolor="none",
-            label=" risk-on",
+            label=" low-risk",
         ),
         Patch(
             facecolor=_color_for_level("off", "risk"),
             edgecolor="none",
-            label=" risk-off",
+            label=" high-risk",
         ),
         Patch(facecolor="#ffec99", edgecolor="black", label="Conflict"),
     ]
@@ -358,7 +358,7 @@ def plot_representation_failure_matrix(
 
     fig_conf.tight_layout()
     conflict_path.parent.mkdir(parents=True, exist_ok=True)
-    fig_conf.savefig(conflict_path, bbox_inches="tight")
+    fig_conf.savefig(conflict_path, bbox_inches="tight", dpi=300)
     plt.close(fig_conf)
     logger.info(
         "plot_representation_failure_matrix: saved conflict figure to %s",
@@ -461,7 +461,7 @@ def plot_representation_failure_matrix(
     # -------------------------
     # Figure 1: Conflict view.
     # -------------------------
-    fig_conf, ax_left = plt.subplots(figsize=(6.0, 3.5), dpi=200)
+    fig_conf, ax_left = plt.subplots(figsize=(6.0, 3.5), dpi=300)
 
     ax_left.plot(price_win.index, price_win.values, color="0.4", linewidth=1.2)
     ax_left.set_title(title_left, fontsize=11)
@@ -686,7 +686,7 @@ def plot_representation_failure_matrix(
 
     fig_conf.tight_layout()
     conflict_path.parent.mkdir(parents=True, exist_ok=True)
-    fig_conf.savefig(conflict_path, bbox_inches="tight")
+    fig_conf.savefig(conflict_path, bbox_inches="tight", dpi=300)
     plt.close(fig_conf)
 
 

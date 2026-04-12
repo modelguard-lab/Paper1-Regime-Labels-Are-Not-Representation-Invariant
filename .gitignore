@@ -25,6 +25,7 @@ outputs/**/*
 Thumbs.db
 .vscode/
 .idea/
+.claude/
 
 ### Word temporary files
 paper/~$*.docx
