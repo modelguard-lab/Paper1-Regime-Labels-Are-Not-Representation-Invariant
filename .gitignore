@@ -30,3 +30,17 @@ Thumbs.db
 ### Word temporary files
 paper/~$*.docx
 
+### PDFs and paper figures
+*.pdf
+*.PDF
+paper/**/*.png
+paper/**/*.jpg
+paper/**/*.jpeg
+paper/**/*.gif
+paper/**/*.bmp
+paper/**/*.tif
+paper/**/*.tiff
+paper/**/*.svg
+paper/**/*.webp
+paper/**/*.eps
+
