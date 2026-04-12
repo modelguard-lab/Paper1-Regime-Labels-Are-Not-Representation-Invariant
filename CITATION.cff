@@ -1,0 +1,16 @@
+cff-version: 1.2.0
+message: "If you use this code, please cite the paper and/or this repository."
+title: "Regime Labels Are Not Representation-Invariant"
+type: software
+authors:
+  - family-names: "Zheng"
+    given-names: "Kai"
+license: "MIT"
+repository-code: "https://github.com/modelguard-lab/Paper1-Regime-Labels-Are-Not-Representation-Invariant"
+keywords:
+  - regime detection
+  - hidden Markov model
+  - Gaussian mixture model
+  - representation invariance
+  - model risk
+  - adjusted Rand index

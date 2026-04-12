@@ -11,11 +11,21 @@ It provides diagnostic evidence on representation-related model instability to s
 
 *(When this codebase is released as the model-validator CLI, the same disclaimer will appear in the tool README and in every generated report.)*
 
+## Installation
+
+- Python 3.10+ recommended
+
+```bash
+pip install -r requirements.txt
+```
+
 ## Run
 
 Use the unified runner:
 
-`python run.py`
+```bash
+python run.py
+```
 
 **Implementation note**: Code is self-contained under `src/`.
 
@@ -96,3 +106,12 @@ If it still crashes, set `grid.n_jobs: 1` or `grid.n_jobs: 2` in
 `config.yaml` to reduce load.
 
 **Note**: Per-asset outputs are written under `outputs/{asset}/`.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
+
+## Citation
+
+If you use this code, please cite the paper and/or this repository.
+See [CITATION.cff](CITATION.cff).
