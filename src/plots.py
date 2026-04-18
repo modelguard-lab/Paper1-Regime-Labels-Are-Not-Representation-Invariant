@@ -364,21 +364,8 @@ def plot_representation_failure_matrix(
         "plot_representation_failure_matrix: saved conflict figure to %s",
         conflict_path,
     )
-
-    # (Legacy failure-matrix panel for Paper 3 has been removed. The ``matrix_path``
-    # argument is retained for backwards-compatibility but no longer used here.)
-    """
-    Generate two separate figures illustrating representation conflict and its risk impact.
-
-    (1) A conflict-only figure with price, layered regimes (Layer A/B), and a conflict strip.
-    (2) A decision--validation failure matrix summarising drawdown in the conflict zones.
-    """
-    if price is None or price.empty:
-        return
-    if states_a is None or states_a.dropna().empty:
-        return
-    if states_b is None or states_b.dropna().empty:
-        return
+    # Legacy panel removed: stop here to avoid duplicate overwrite.
+    return
 
     # Restrict to common index and the specified calendar window.
     price = price.sort_index()
@@ -592,14 +579,14 @@ def plot_representation_failure_matrix(
             )
             legend_done.add(band_label)
 
-    # Draw Layer A (returns-based representation) and Layer B (risk-based representation).
+    # Draw Layer A and Layer B state bands.
     _draw_state_band(
         common_idx,
         s_a.to_numpy(),
         label_map_a,
         ymin=0.70,
         ymax=0.82,
-        label_prefix="Layer A (returns)",
+        label_prefix="rep_a",
         alpha=0.65,
         palette="returns",
     )
@@ -609,7 +596,7 @@ def plot_representation_failure_matrix(
         label_map_b,
         ymin=0.52,
         ymax=0.64,
-        label_prefix="Layer B (risk)",
+        label_prefix="rep_c1",
         alpha=0.40,
         palette="risk",
     )
@@ -666,10 +653,10 @@ def plot_representation_failure_matrix(
         by_label = dict(zip(labels, handles))
         # Enforce intuitive ordering: risk-on then risk-off for each layer, then conflict.
         desired = [
-            "Layer A (returns): risk-on",
-            "Layer A (returns): risk-off",
-            "Layer B (risk): risk-on",
-            "Layer B (risk): risk-off",
+            "rep_a: risk-on",
+            "rep_a: risk-off",
+            "rep_c1: risk-on",
+            "rep_c1: risk-off",
             "Conflict zone",
         ]
         ordered_labels = [lab for lab in desired if lab in by_label]
@@ -688,6 +675,156 @@ def plot_representation_failure_matrix(
     conflict_path.parent.mkdir(parents=True, exist_ok=True)
     fig_conf.savefig(conflict_path, bbox_inches="tight", dpi=300)
     plt.close(fig_conf)
+
+
+def plot_disagreement_timeseries(
+    hard_map: dict,
+    price: pd.Series,
+    out_path: Path,
+    reps: list[str],
+    model: str = "hmm",
+    seed: int = 1,
+    roll: str | None = None,
+    smooth_window: int = 63,
+    stress_periods: list[tuple[str, str, str]] | None = None,
+) -> None:
+    """Plot rolling cross-representation disagreement rate over the full sample.
+
+    For each date, computes the fraction of representation pairs that assign
+    different coarse risk labels (high-risk vs not).  A rolling average smooths
+    the series for readability.
+
+    Parameters
+    ----------
+    hard_map : dict
+        Mapping (rep, model, seed, roll) -> pd.Series of state labels.
+    price : pd.Series
+        Price series (used as background).
+    reps : list[str]
+        Representation names to include.
+    model, seed, roll : str, int, str
+        Selectors for the state sequences. If roll is None, the first
+        available roll is used.
+    smooth_window : int
+        Rolling-average window for the disagreement rate.
+    stress_periods : list of (start, end, label)
+        Date ranges to shade (e.g. COVID, 2022 inflation).
+    """
+    from itertools import combinations
+
+    if stress_periods is None:
+        stress_periods = [
+            ("2020-02-19", "2020-06-08", "COVID-19"),
+            ("2022-01-03", "2022-10-14", "2022 inflation"),
+        ]
+
+    # Collect risk labels across ALL rolls for each rep.
+    # State numbering can differ between rolls, so we compute risk labels
+    # (binary: 1=high-risk, 0=not) per roll, then stitch them together.
+    ret = price.pct_change()
+    risk_labels: dict[str, pd.Series] = {}
+    for rep in reps:
+        keys = [k for k in hard_map if k[0] == rep and k[1] == model and k[2] == seed]
+        if roll is not None:
+            keys = [k for k in keys if k[3] == roll]
+        if not keys:
+            continue
+        # Process rolls in order so later rolls overwrite earlier ones
+        # on overlapping dates.
+        roll_risk: list[pd.Series] = []
+        for key in sorted(keys, key=lambda k: k[3]):
+            s = hard_map[key].dropna().astype(int)
+            if s.empty:
+                continue
+            n_states = int(s.max()) + 1
+            state_means = {}
+            for st in range(n_states):
+                idx = s[s == st].index
+                r = ret.reindex(idx).dropna()
+                state_means[st] = float(r.mean()) if len(r) > 0 else 0.0
+            worst_state = min(state_means, key=state_means.get)
+            roll_risk.append(s.map(lambda x, ws=worst_state: 1 if x == ws else 0))
+        if roll_risk:
+            # Concatenate; later rolls overwrite earlier ones on duplicate dates
+            combined = pd.concat(roll_risk)
+            risk_labels[rep] = combined[~combined.index.duplicated(keep="last")].sort_index()
+
+    available_reps = list(risk_labels.keys())
+    if len(available_reps) < 2:
+        logger.warning("plot_disagreement_timeseries: fewer than 2 reps available; skipping.")
+        return
+
+    # For each date, compute fraction of pairs that disagree
+    all_dates = sorted(set().union(*(rl.index for rl in risk_labels.values())))
+    all_dates = pd.DatetimeIndex(all_dates)
+    pairs = list(combinations(available_reps, 2))
+    n_pairs = len(pairs)
+
+    disagree = pd.Series(np.nan, index=all_dates, name="disagreement_rate")
+    for dt in all_dates:
+        n_disagree = 0
+        n_valid = 0
+        for ra, rb in pairs:
+            la = risk_labels[ra]
+            lb = risk_labels[rb]
+            if dt in la.index and dt in lb.index:
+                n_valid += 1
+                if la[dt] != lb[dt]:
+                    n_disagree += 1
+        if n_valid > 0:
+            disagree[dt] = n_disagree / n_valid
+
+    disagree_smooth = disagree.rolling(smooth_window, min_periods=1).mean()
+
+    # Plot
+    fig, (ax_price, ax_dis) = plt.subplots(
+        2, 1, figsize=(6.4, 4.0), dpi=300, sharex=True,
+        gridspec_kw={"height_ratios": [1, 1.3], "hspace": 0.08},
+    )
+
+    # Price panel
+    p = price.reindex(all_dates).dropna()
+    ax_price.plot(p.index, p.values, color="black", linewidth=0.8)
+    ax_price.set_ylabel(price.name or "Price", fontsize=8)
+    ax_price.tick_params(labelsize=7)
+    ax_price.grid(True, alpha=0.2, linewidth=0.5)
+
+    # Disagreement panel
+    ax_dis.fill_between(
+        disagree_smooth.index, 0, disagree_smooth.values,
+        color="#1f77b4", alpha=0.3, linewidth=0,
+    )
+    ax_dis.plot(
+        disagree_smooth.index, disagree_smooth.values,
+        color="#1f77b4", linewidth=1.0,
+    )
+    ax_dis.set_ylabel("Disagreement rate", fontsize=8)
+    ax_dis.set_ylim(0, 1)
+    ax_dis.tick_params(labelsize=7)
+    ax_dis.grid(True, alpha=0.2, linewidth=0.5)
+
+    # Stress-period shading on both panels
+    for start, end, label in stress_periods:
+        for ax in (ax_price, ax_dis):
+            ax.axvspan(
+                pd.Timestamp(start), pd.Timestamp(end),
+                color="#ff7f0e", alpha=0.12, zorder=0,
+            )
+        # Label at the top of each shaded band
+        mid = pd.Timestamp(start) + (pd.Timestamp(end) - pd.Timestamp(start)) / 2
+        ax_price.annotate(
+            label, xy=(mid, ax_price.get_ylim()[1]),
+            xytext=(0, 2), textcoords="offset points",
+            ha="center", va="bottom", fontsize=5.5, color="#cc6600",
+            annotation_clip=False,
+        )
+
+    ax_dis.set_xlabel("Date", fontsize=8)
+    fig.tight_layout()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, bbox_inches="tight", dpi=300)
+    plt.close(fig)
+    logger.info("plot_disagreement_timeseries: saved to %s", out_path)
 
 
 def plot_stability_heatmap(

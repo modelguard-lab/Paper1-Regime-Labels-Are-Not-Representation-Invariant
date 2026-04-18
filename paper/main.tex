@@ -9,11 +9,14 @@
 \usepackage{graphicx}
 \usepackage{float}
 \usepackage{natbib}
+\usepackage{array}
+\usepackage{seqsplit}
+\hypersetup{hypertexnames=false}
 
-\bibliographystyle{elsarticle-harv}
+\bibliographystyle{apalike}
 
 \setlength{\emergencystretch}{4em}
-\hfuzz=3pt
+\hfuzz=6pt
 \hbadness=1100
 
 \makeatletter
@@ -38,26 +41,26 @@
 
 \title{Regime Labels Are Not Representation-Invariant:\\ Implications for Model Risk Governance}
 
-%\author[1]{Kai Zheng}
-%\ead{kaizhengnz@gmail.com}
-%\author[2]{Rand Low}
-%\ead{rlow@bond.edu.au}
-%\author[1]{Ruili Wang\corref{cor1}}
-%\ead{ruili.wang@massey.ac.nz}
+\author[1]{Kai Zheng}
+\ead{kaizhengnz@gmail.com}
+\author[2]{Rand Low}
+\ead{rlow@bond.edu.au}
+\author[1]{Ruili Wang\corref{cor1}}
+\ead{ruili.wang@massey.ac.nz}
 
-%\cortext[cor1]{Corresponding author: ruili.wang@massey.ac.nz (Ruili Wang)}
+\cortext[cor1]{Corresponding author: Ruili Wang}
 
-%\affiliation[1]{organization={School of Mathematical and\\Computational Sciences\\Massey University},
-%            city={Auckland},
-%            country={New Zealand}}
+\affiliation[1]{organization={School of Mathematical and Computational Sciences\\Massey University},
+            city={Auckland},
+            country={New Zealand}}
 
-%\affiliation[2]{organization={Bond Business School\\Bond University},
-%            city={Gold Coast},
-%            state={QLD},
-%            country={Australia}}
+\affiliation[2]{organization={Bond Business School\\Bond University},
+            city={Gold Coast},
+            state={QLD},
+            country={Australia}}
 
 \begin{abstract}
-As Basel IV (the revised international regulatory capital framework) implementation proceeds, structural stability in regime models has evolved into a critical model risk governance mandate. We investigate representation uncertainty in market regime identification across four single-asset case studies spanning equities, sovereign debt, safe-haven commodities, and digital assets, utilizing multiple admissible rolling risk-based feature sets alongside Gaussian mixture and hidden Markov models. Across these asset classes, the cross-representation agreement is persistently low and remains materially inferior to temporal agreement under fixed specifications. A step size sweep uncovers a crucial artifact: much of the apparent temporal stability is mechanically inflated by rolling-window overlap, whereas representation-driven disagreement persists regardless of step size. Consequently, partition-level regime assignments exhibit minimal evidence of representation invariance within the economically admissible classes studied here. However, the evidence is not of wholesale instability; we find that coarse risk ordering remains substantially more robust than exact partition boundaries. For governance, the implication is direct: the uncertainty of representation must be recognized as a first-order source of model risk. We argue that cross-representation diagnostics should become a standard complement to conventional temporal validation in risk-sensitive financial applications.
+Market regime models underpin capital allocation, risk limits, and hedging decisions, yet their outputs depend on modelling choices that practitioners treat as innocuous: which features to include, what rolling window to use, and whether to standardize. Under Basel IV and SR 11-7, models must demonstrate structural stability, but the sensitivity of regime labels to this \emph{representation layer} has not been systematically quantified. We develop a cross-representation ARI diagnostic and apply it to four single-asset case studies spanning equities, sovereign debt, commodities, and digital assets. Using seven economically admissible feature representations with both Gaussian mixture and hidden Markov models, we find that cross-representation agreement is consistently low, falling well below the 0.65 threshold for adequate partition recovery. A step-size sweep reveals that much of the apparent temporal stability reported in prior work is mechanically inflated by rolling-window overlap; representation-driven disagreement, by contrast, persists at all step sizes, including fully non-overlapping windows. A synthetic experiment with known ground truth suggests that the low agreement is more consistent with genuine inference failure than with the coexistence of equally valid partitions, though the question is not fully resolved for real markets. These results carry direct economic consequences: during the COVID-19 stress window, representation-conditional CVaR estimates for the same asset diverge by more than 280\% of the unconditional value. We recommend that model validation packages include cross-representation agreement as a standard complement to temporal stability checks.
 \end{abstract}
 
 \begin{keyword}
@@ -69,13 +72,15 @@ Basel IV \sep model risk governance \sep representation uncertainty \sep regime 
 
 \section{Introduction}
 
-Market states or regimes are widely used in finance to describe time-varying conditions and to support risk assessment and portfolio construction \citep{Hamilton1989}. Under Basel IV\footnote{Revised international capital and liquidity framework; Basel Committee on Banking Supervision, \url{https://www.bis.org/bcbs/}.} and supervisory frameworks such as SR 11-7\footnote{Federal Reserve Supervisory Letter SR 11-7, \emph{Supervision and Regulation}: Model Risk Management (April 2011), \url{https://www.federalreserve.gov/supervisionreg/srletters/sr1107.htm}.}, models are expected to demonstrate structural stability rather than merely acceptable backtests \citep{SR117}. Yet one critical layer remains largely unaudited: the representation layer---the choice of features, rolling windows, and preprocessing rules. Regime assignments are never recovered from raw data alone. They depend on how the series is represented \citep{BengioCourvilleVincent2013}. In asset pricing, the choice of characteristics and factor representations similarly shapes inference \citep{GuKellyXiu2020,KellyPruittSu2019}. In non-stationary markets, where drift and model risk interact most strongly during stress \citep{DanielssonJamesValenzuelaZer2016}, the governance question is immediate: do inferred states survive admissible representation changes, or are they merely representation-conditional partitions? If the same market segment can be labelled differently under equally defensible representations, regime-based capital, hedging, and limit frameworks inherit a source of model risk that standard validation rarely quantifies.
+Market regimes are widely used in risk assessment and portfolio construction \citep{Hamilton1989}. Under Basel IV\footnote{Revised international capital and liquidity framework; Basel Committee on Banking Supervision, \url{https://www.bis.org/bcbs/}.} and SR 11-7\footnote{Federal Reserve Supervisory Letter SR 11-7, \emph{Supervision and Regulation}: Model Risk Management (April 2011), \url{https://www.federalreserve.gov/supervisionreg/srletters/sr1107.htm}.}, models must demonstrate structural stability, not merely acceptable backtests \citep{SR117}. Yet one critical layer remains largely unaudited: the representation layer---the choice of features, rolling windows, and preprocessing rules. Regime assignments are never recovered from raw data alone; they depend on how the series is represented \citep{BengioCourvilleVincent2013}, much as factor model inference depends on the choice of characteristics \citep{GuKellyXiu2020,KellyPruittSu2019}. If the same market segment can be labelled differently under equally defensible representations, regime-based capital, hedging, and limit frameworks inherit a source of model risk that standard validation rarely quantifies \citep{DanielssonJamesValenzuelaZer2016}.
 
-We treat market states as descriptive statistical constructs and ask whether they exhibit invariance across economically reasonable representation choices. The clustering stability literature \citep{BenDavidLuxburgPal06,vonLuxburg2010} formalises stability under a \emph{fixed} representation and algorithm. It does not ask whether the same data support a stable partition when the \emph{representation} itself varies. This paper instead studies \emph{practical representation-invariant stability}: whether the inferred regime remains stable when feature construction, preprocessing, and windowing vary within an admissible class and the data-generating process is non-stationary. The broader underspecification literature \citep{DAmouretal2022} shows that ML pipelines can produce models with equivalent held-out performance but dramatically different behaviour under distribution shift; our setting is arguably more severe because there is no held-out performance criterion to anchor the comparison. We present four single-asset case studies using multiple rolling risk-based feature sets and both Gaussian mixture and hidden Markov models.
+We treat market states as descriptive statistical constructs and ask whether they exhibit invariance across economically reasonable representation choices. The clustering stability literature \citep{BenDavidLuxburgPal06,vonLuxburg2010} formalises stability under a \emph{fixed} representation and algorithm. It does not ask whether the same data support a stable partition when the \emph{representation} itself varies. This paper instead studies \emph{practical representation-invariant stability}: whether the inferred regime remains stable when feature construction, preprocessing, and windowing vary within an admissible class and the data-generating process is non-stationary.
 
-We conduct the test on four single-asset daily series chosen for governance relevance: \SPX{} as a proxy for market-risk state variation under the FRTB\footnote{Fundamental Review of the Trading Book; BCBS minimum capital requirements for market risk, \url{https://www.bis.org/bcbs/publ/d457.htm}.}\  framework \citep{BCBSD457}, \IEF{} for rate-sensitive banking-book risk, \GLD{} for stress-hedge behaviour, and \BTC{} as an extreme-volatility benchmark.
+The broader underspecification framework of \citet{DAmouretal2022} demonstrates that ML pipelines can yield models with equivalent in-sample performance but dramatically different behaviour under distribution shift. Their diagnostic relies on this performance anchor: two pipelines are \emph{underspecified} if they are observationally equivalent in-distribution yet diverge out-of-distribution. Regime identification lacks this anchor entirely; there is no held-out labelling to adjudicate between competing partitions, and a low cross-representation ARI admits two readings: it may signal \emph{instability} (a defect), or it may signal \emph{irreducible plurality} (multiple equally valid partitions coexisting under legitimate modelling choices). Either reading has governance consequences, but they differ in kind: instability calls for model repair, while plurality calls for ensemble or decision-theoretic reporting. We return to this interpretive tension in Section~4.4 after presenting the empirical results.
 
-Recent Finance Research Letters work revisits bull-bear identification \citep{Kirby2023FRL}, spillover network instability across regimes \citep{YangFeng2023FRL}, within-regime volatility under Markov-switching score-driven models \citep{BlazsekKongShadoff2025}, clustering for political uncertainty and regime detection \citep{Ampountolas2025FRL}, and regime-switching realized-volatility forecasting \citep{WangYuanQu2026FRL}. That literature evaluates performance only after a representation has been fixed; we instead test whether the resulting labels remain stable across admissible representations, framing representation uncertainty as a structural source of model risk studied through cross-representation versus temporal agreement, step-size sensitivity, and seed/model robustness.
+We conduct the test on four single-asset daily series chosen for governance relevance: \SPX{} as a proxy for market-risk state variation under the FRTB\footnote{Fundamental Review of the Trading Book; BCBS minimum capital requirements for market risk, \url{https://www.bis.org/bcbs/publ/d457.htm}.}\  framework \citep{BCBSD457}, \IEF{} for rate-sensitive banking-book risk, \GLD{} for stress-hedge behaviour, and \BTC{} as an extreme-volatility benchmark, using multiple rolling risk-based feature sets and both Gaussian mixture and hidden Markov models.
+
+Recent work revisits bull-bear identification \citep{Kirby2023FRL}, within-regime volatility under score-driven models \citep{BlazsekKongShadoff2025}, clustering for regime detection \citep{Ampountolas2025FRL}, and regime-switching forecasting \citep{WangYuanQu2026FRL}. \citet{Ampountolas2025FRL} show that clustering feature choice shapes regime assignments, a concern closely related to our analysis, though evaluated through forecasting performance rather than partition agreement. That literature evaluates performance only after a representation has been fixed. We instead test whether the resulting labels remain stable across admissible representations, examining the problem through three lenses: cross-representation versus temporal agreement, sensitivity to the rolling-window step size, and seed- and model-level robustness.
 
 \section{Methodology}
 
@@ -85,11 +90,11 @@ We adopt a minimal single-asset design, avoiding artificial stability from cross
 
 \subsection{Risk-based feature representations}
 
-Latent regimes are inferred from constructed feature representations rather than raw returns. We use rolling risk-based features common in empirical finance and downside risk management: realized volatility, drawdown measures, and tail-risk statistics (VaR, CVaR). The admissible representation class is a fixed family of six economically interpretable mappings, chosen to cover the main dimensions of variation available to a prudent risk manager---feature composition, rolling horizon, and standardization---without exhausting all possible combinations; the aim is to characterise the admissible class rather than enumerate it. The class spans volatility/drawdown/tail-risk combinations with windows between 20 and 90 business days and either rolling $z$-score standardization or no standardization. The rolling standardization uses a 120-day lookback, which is shorter than the 252-day estimation window; this allows the standardizer to track medium-term distributional shifts without leaking information from the full estimation window. All representations are constructed without forward-looking information. Exact definitions are summarised in the supplementary appendix.
+Latent regimes are inferred from constructed feature representations rather than raw returns. We use rolling risk-based features common in empirical finance and downside risk management: realized volatility, drawdown measures, tail-risk statistics (VaR, CVaR), and, for one alternative specification, realized skewness and volatility-of-volatility. The admissible representation class is a fixed family of seven economically interpretable mappings, chosen to vary along four dimensions available to a prudent risk manager: (i)~standardization (rolling $z$-score versus none), (ii)~feature subset (inclusion or exclusion of maximum drawdown or VaR), (iii)~rolling horizon (20/60-day versus 30/90-day windows), and (iv)~volatility estimator (rolling realized volatility versus GARCH(1,1) conditional volatility). The first six representations share a common rolling-window architecture and, by design, exhibit substantial mutual overlap: five of six use VaR and CVaR as tail features, and four of six share the same window parameterization ($\text{vol}=20$, $\text{dd}=60$, $\text{tail}=60$). This redundancy is deliberate: if cross-representation ARI is already low among near-redundant specifications, it constitutes a conservative lower bound on the disagreement that would arise under a broader class. To test whether the finding extends beyond the rolling-window family, a seventh representation (rep\_d) replaces rolling realized volatility with GARCH(1,1) conditional volatility, a parametric autoregressive filter with exponential weighting that captures volatility clustering through a fundamentally different estimation mechanism. The class spans windows between 20 and 90 business days and either rolling $z$-score standardization (120-day lookback, shorter than the 252-day estimation window so that features update within each window) or no standardization. All features and standardizers are strictly backward-looking. Exact definitions are summarised in the supplementary appendix.
 
 \subsection{State inference models}
 
-We estimate two unsupervised models: a Gaussian Hidden Markov Model (HMM) \citep{ElliottAggounMoore1995}\footnote{Hidden Markov Model; see Elliott et al.\ (1995), \url{https://link.springer.com/book/10.1007/978-1-4612-2832-0}.} with first-order Markov transitions and, as a static benchmark, a Gaussian Mixture Model (GMM)\footnote{Gaussian Mixture Model; e.g.\ \url{https://scikit-learn.org/stable/modules/mixture.html}.}. Both are standard in the regime literature. Parameters are estimated by maximum likelihood via Expectation--Maximization. We fix $K=3$ in the baseline, reflecting the common practitioner convention of distinguishing low-, medium-, and high-risk regimes, so that representation-induced instability is not confounded with state-number choice; robustness checks in Section~4.3 confirm the qualitative findings hold for $K \in \{2,4\}$. If practical representation-invariant stability is not supported even for these low-capacity specifications, the issue is unlikely to disappear with richer feature spaces, as the same representation and drift mechanisms apply \citep{RadLowMiffreFaff2023,VuleticPrenzelCucuringu2024}.
+We estimate two unsupervised models: a Gaussian Hidden Markov Model (HMM) \citep{ElliottAggounMoore1995} with first-order Markov transitions, implemented via the \texttt{hmmlearn} library (v0.2.8+)\footnote{\url{https://hmmlearn.readthedocs.io/}.}, and, as a static benchmark, a Gaussian Mixture Model (GMM) implemented via \texttt{scikit-learn}\footnote{\url{https://scikit-learn.org/}.}. Both are standard in the regime literature. Parameters are estimated by maximum likelihood via Expectation--Maximization. We fix $K=3$ in the baseline, reflecting the common practitioner convention of distinguishing low-, medium-, and high-risk regimes, so that representation-induced instability is not confounded with state-number choice; the $K$ sweep in Section~4.3 confirms that the core finding (cross-representation ARI persistently below the poor-recovery threshold) holds for $K \in \{2,4\}$, while the relative ordering of temporal and cross-representation agreement is itself $K$-dependent. If practical representation-invariant stability is not supported even for these low-capacity specifications, the issue is unlikely to disappear with richer feature spaces, as the same representation and drift mechanisms apply \citep{RadLowMiffreFaff2023,VuleticPrenzelCucuringu2024}.
 
 \subsection{Practical representation-invariant stability (empirical diagnostic)}
 
@@ -102,19 +107,24 @@ where $\mathrm{Infer}(\Phi(X), M)$ denotes the state-assignment operator that ma
 \noindent\textbf{Empirical diagnostic.} We say that regime labels exhibit \emph{practical representation-invariant stability} over $(\mathcal{F}, \mathcal{M})$ if there exists $\delta > 0$ such that
 \begin{equation}
 \inf_{\Phi_1,\Phi_2 \in \mathcal{F}} \inf_{M_1,M_2 \in \mathcal{M}}
-\mathrm{ARI}\big(S(\Phi_1,M_1), S(\Phi_2,M_2)\big) \ge \delta
+\mathrm{ARI}\!\Big(S(\Phi_1,M_1),\; S(\Phi_2,M_2)\Big) \ge \delta
 \end{equation}
 where ARI is the Adjusted Rand Index, which is intrinsically permutation-invariant and does not require label alignment; we do not require $\delta = 1$, only a uniform positive lower bound.
 
-We use the minimum, or a low quantile, of cross-representation ARI over the admissible class as an \emph{empirical diagnostic} for this condition; we do not test theoretical identifiability. When observed cross-representation ARI is low, inferred regimes are contingent on representation choice within the admissible class.
+We use the minimum, or a low quantile, of cross-representation ARI over the admissible class as an \emph{empirical diagnostic} for this condition, rather than testing theoretical identifiability. When observed cross-representation ARI is low, inferred regimes are contingent on representation choice within the admissible class.
 
 \subsection{Stability diagnostics}
 
-We measure \emph{cross-representation agreement} and \emph{temporal agreement}. The former is the pairwise similarity between state sequences from different $\Phi$ under the same or different $M$; the latter measures agreement between consecutive rolling windows under identical $\Phi$ and $M$. As primary metric we use the Adjusted Rand Index (ARI) \citep{HubertArabie1985}, which corrects for chance and is permutation-invariant. As a robustness check we report Adjusted Mutual Information (AMI) \citep{VinhEppsBailey2010}, which also adjusts for chance but is sensitive to the full joint distribution rather than just large-cluster agreement \citep{WarrensvanderHoef2022}. Significance of the cross-representation ARI is assessed via an aggregate permutation test ($B=999$): we randomly sample up to 60 cross-representation state-sequence pairs per (asset, step) combination (60 is the maximum available given $\binom{6}{2}\times4$ representation--model pairings; fewer pairs are sampled only when some specifications fail to converge), permute one sequence $B$ times and recompute ARI each time, and pool the exceedance counts across all sampled pairs. Formally, if $e_i$ counts how many of the $B$ permuted ARIs meet or exceed the observed ARI for pair $i$, the aggregate p-value is $\hat{p} = \sum_i (e_i+1) / \sum_i (B+1)$. A step-size sweep varies the rolling-window shift---a standard diagnostic for overlap-induced autocorrelation in rolling statistics \citep{vonLuxburg2010}---to distinguish genuine regime persistence from mechanical overlap. Our objective is structural stability assessment, not model selection.
+We measure \emph{cross-representation agreement} and \emph{temporal agreement}. The former is the pairwise similarity between state sequences from different $\Phi$ within a fixed model class $M$; the latter measures agreement between consecutive rolling windows under identical $\Phi$ and $M$.
+
+\paragraph{Temporal agreement: two complementary metrics.}
+We report two temporal metrics. The \emph{overlap metric} compares labels on the $W-s$ dates shared by consecutive windows $i$ and $i+1$. It is the traditional measure but is mechanically inflated because both state sequences are fitted to largely the same observations \citep{vonLuxburg2010}. The \emph{disjoint metric} avoids this contamination by comparing labels on the $s$ dates unique to each window, paired positionally: position $k$ of the outgoing segment (roll $i$) is compared with position $k$ of the incoming segment (roll $i+1$). Each paired observation is therefore separated by exactly $W$ business days. At short steps ($s \ll W$) the disjoint metric measures whether the model assigns similar labels to points one full window apart under nearly identical parameterizations; at step~$= W$ (non-overlapping windows) it measures label consistency across independently estimated models separated by one year. When the disjoint temporal ARI is low at large steps, this can reflect either low regime persistence or estimation instability across non-overlapping samples; the two are not distinguished. We report both metrics throughout: the overlap metric provides an upper bound on temporal stability, and the disjoint metric provides a lower bound, with the gap quantifying the overlap inflation.
+
+As primary metric we use the Adjusted Rand Index (ARI) \citep{HubertArabie1985}, which corrects for chance and is permutation-invariant. As a robustness check we report Adjusted Mutual Information (AMI) \citep{VinhEppsBailey2010}, which also adjusts for chance but is sensitive to the full joint distribution rather than just large-cluster agreement \citep{WarrensvanderHoef2022}. As a minimal sanity check we report per-pair one-sided permutation p-values ($B=99$, 2{,}000 pairs per asset) to assess whether cross-representation agreement exceeds random labelling. Approximately 98\% of pairs satisfy $p<0.05$ (Table~\ref{tab:perm_per_asset}); the residual 2\% corresponds to (model, seed, rolling window, representation-pair) combinations for which the observed ARI itself is near zero, and are therefore correctly classified by the test as indistinguishable from the null. Because representation pairs constructed from the same asset share underlying data, individual per-pair tests are not independent; we therefore report the proportion of pairs rejecting at $p<0.05$ rather than a single pooled statistic. The test is intentionally weak: the substantive finding is the \emph{magnitude} of ARI (well below 0.65), not its sign. A step-size sweep varies the number of business days between consecutive rolling windows to distinguish genuine regime persistence from mechanical overlap. Our objective is structural stability assessment, not model selection.
 
 \section{Data}
 
-Daily price data are obtained from Yahoo Finance via the Python package \texttt{yfinance}. We use adjusted close at daily frequency to account for dividends and splits. The sample covers four assets with distinct risk-return profiles: \BTC{} (crypto), \GLD{} (commodity and safe-haven), \SPX{} (equity), and \IEF{} (fixed income). In our sample, \GLD{}, \SPX{}, and \IEF{} run from January 2005 through February 2026, while \BTC{} runs from September 2014 through February 2026. The longer series therefore cover major market episodes including the 2020 COVID-19 crash and the 2022 inflation shock; \GLD{}, \SPX{}, and \IEF{} also cover the post-2005 portion of the global financial crisis period. All return-based quantities are computed from daily log returns, $r_t = \log(P_t/P_{t-1})$. Missing values arise only from the initial return difference and rolling-window warm-up and are excluded when features and state sequences are aligned. Each asset is treated as an independent replication, avoiding contamination from cross-sectional structure.
+Daily price data are obtained from Yahoo Finance via the Python package \texttt{yfinance}. We use adjusted close at daily frequency to account for dividends and splits. The sample covers four assets with distinct risk-return profiles: \BTC{} (crypto), \GLD{} (commodity and safe-haven), \SPX{} (equity), and \IEF{} (fixed income). In our sample, \GLD{}, \SPX{}, and \IEF{} run from January 2005 through February 2026, while \BTC{} runs from September 2014 through February 2026. The longer series therefore cover major market episodes including the 2007--2009 global financial crisis, the 2020 COVID-19 crash, and the 2022 inflation shock. All return-based quantities are computed from daily log returns, $r_t = \log(P_t/P_{t-1})$. Missing values arise only from the initial return difference and rolling-window warm-up and are excluded when features and state sequences are aligned. Each asset is treated as an independent replication, avoiding contamination from cross-sectional structure.
 
 Table~\ref{tab:data_summary} reports descriptive statistics. \BTC{} exhibits the highest volatility and the shortest history; the four assets span crypto, commodity, equity, and fixed income, allowing us to assess whether representation dependence is specific to one market or a broader feature of rolling-window regime inference.
 
@@ -136,7 +146,7 @@ IEF     & 5312 & 0.013 & 0.427 & $-$2.54  & 3.37  & 2005--2026 \\
 \end{tabular}
 \medskip
 \footnotesize
-\textit{Notes:} Mean, Std, Min, Max are in percentage points. \\
+\textit{Notes:} Mean, Std, Min, Max are in percentage points. BTC-USD Min ($-46.47\%$) occurred on 12 March 2020 (COVID-19 liquidity crisis); Max ($22.51\%$) on 7 December 2017. \\
 \textit{Source:} Yahoo Finance via \texttt{yfinance}; authors' calculations.
 \end{table}
 
@@ -144,37 +154,42 @@ IEF     & 5312 & 0.013 & 0.427 & $-$2.54  & 3.37  & 2005--2026 \\
 
 \subsection{Baseline comparison}
 
-Table~\ref{tab:baseline} reports cross-representation and temporal agreement under the baseline specification (window $=252$ business days, step $=21$, $K=3$), averaged across the four case studies. For both models, temporal agreement materially exceeds cross-representation agreement (Table~\ref{tab:baseline}), with all cross-representation ARI values falling below \citet{Steinley2004}'s 0.65 threshold for poor partition recovery. A permutation test ($B=999$, see Section~2.5) confirms that cross-representation ARI is statistically distinguishable from zero at the baseline step ($p \le 0.023$ for all four assets), ruling out random labelling as the null but reinforcing that agreement is far from the unity required for representation invariance; Section~4.2 shows that cross-representation disagreement persists at all step sizes examined. In practical terms, the same observation window can be classified as low risk under one representation and high risk under another. At the same time, the governance-relevant coarse ordering of states is materially more stable than the exact partition: across assets, cross-representation top-1 agreement for the highest-risk state remains above 0.91 and cross-representation Spearman rank agreement ranges 0.886--0.907 (Appendix Table~\ref{tab:ordering}). The evidence therefore points to instability in fine partition boundaries rather than wholesale instability in coarse risk ordering.
+Table~\ref{tab:baseline} reports cross-representation and temporal agreement under the baseline specification (window $=252$, step $=21$, $K=3$, 20 seeds), averaged across the four case studies. For HMM, temporal agreement exceeds cross-representation agreement; for GMM, the ordering reverses, with cross-representation ARI marginally above temporal. The uniform finding across both models is that all cross-representation ARI values fall well below \citet{Steinley2004}'s 0.65 threshold for poor partition recovery. Permutation tests on a random sample of 2{,}000 representation pairs ($B=99$ per pair with the $(e+1)/(B+1)$ correction of Section~2.5) yield an aggregate $p < 0.025$ for all four assets and a median per-pair $p = 0.01$. Between 97.9\% and 98.5\% of per-pair tests reject at $p<0.05$; the remaining 1.5--2.1\% are specific (model, seed, roll) slices where the observed ARI is itself near zero (range ${[-0.13, 0.05]}$, median ${\approx}0$), corresponding to rolling windows in which two representations happen to produce nearly independent partitions. The substantive finding, however, is the magnitude of ARI, not its sign. In practical terms, the same observation window can be classified as low risk under one representation and high risk under another.
 
-GMM exhibits higher stability than HMM in both dimensions. Standard validation that focuses only on a fixed specification can therefore certify a model as stable while state assignments still shift materially across admissible representation choices. The same pattern holds in each of the four case studies.
+Cross-representation top-1 agreement and Spearman rank correlation appear high in absolute terms (Supplementary Table~\ref{tab:ordering}), but do not consistently exceed the chance baseline under Hungarian matching at $K=3$: for BTC-USD and GLD the observed values fall below the null, while for S\&P 500 and IEF they marginally exceed it (Supplementary Section~\ref{app:ordering}). This test has limited discriminative power at $K=3$ due to Spearman discreteness and structural inflation of the null; the result should be read as ``ordering cannot be confirmed above the baseline with this test design.''
+
+The relative ranking of the two models depends on the stability dimension: GMM exhibits higher cross-representation stability than HMM (0.415 versus 0.355), while HMM shows modestly higher temporal stability (0.425 versus 0.396). Both models nonetheless leave cross-representation ARI well below the invariance benchmark, so standard validation that inspects only a fixed specification can classify a model as temporally stable while its state assignments shift across admissible representation choices.
+
+\paragraph{Downstream economic impact.}
+To quantify whether label disagreement translates into material risk-estimate divergence, we compute the regime-conditional CVaR (5\%, in-state historical expected shortfall) implied by each representation for each trading day, and measure the cross-representation spread (max $-$ min) as a fraction of the unconditional CVaR. Across the four assets, the mean spread ranges from 38\% (IEF, GMM) to 90\% (BTC, HMM) of the unconditional CVaR, averaging 71\% for HMM and 56\% for GMM. During the COVID-19 stress window (February--June 2020), the spread for the \SPX{} reaches 240\% of the unconditional CVaR; for BTC, it exceeds 280\%: the regime-conditional risk estimate assigned by one representation can be several multiples of the estimate assigned by another. Representation uncertainty thus propagates directly into the risk estimates that regime models are intended to inform.
 
 \begin{table}[!htbp]
 \centering
 \small
 \setlength{\tabcolsep}{5pt}
-\caption{Baseline agreement by model class (averaged across four case studies).}
+\caption{Baseline agreement by model class (mean $\pm$ 95\% CI across 20 seeds, averaged across four case studies).}
 \label{tab:baseline}
-\begin{tabular}{lcccc}
+\begin{tabular}{lcc}
 \toprule
-Model & Cross-rep.\ ARI & Cross-rep.\ AMI & Temporal ARI & Temporal AMI \\
+Model & Cross-rep.\ ARI & Temporal ARI \\
 \midrule
-GMM & 0.388 & 0.440 & 0.671 & 0.704 \\
-HMM & 0.290 & 0.324 & 0.483 & 0.510 \\
+GMM & 0.415 $\pm$ 0.002 & 0.396 $\pm$ 0.005 \\
+HMM & 0.355 $\pm$ 0.034 & 0.425 $\pm$ 0.028 \\
 \bottomrule
 \end{tabular}
 \medskip
 \footnotesize
-\textit{Notes:} Window $=252$, step $=21$, $K=3$; seeds $\{1,2\}$. ARI: Adjusted Rand Index \citep{HubertArabie1985}; AMI: Adjusted Mutual Information \citep{VinhEppsBailey2010}; both correct for chance. Cross-rep.: averaged over all admissible representation pairs per model. Temporal: ARI/AMI between consecutive rolling windows (same representation). Values reported here are per model class; Table~\ref{tab:step_sensitivity} reports the GMM/HMM average (cross-rep ARI $\approx 0.34$ at step $=21$). Permutation test ($B=999$, 60 sampled pairs, see Section~2.5): $p \le 0.023$ for all four assets. \\
+\textit{Notes:} Window $=252$, step $=21$, $K=3$; 20 random seeds; 7 representations including rep\_d (GARCH-vol). ARI: Adjusted Rand Index \citep{HubertArabie1985}; CI: asset-average 95\% confidence interval across seeds. Cross-rep.: averaged over all admissible representation pairs per model. Temporal: ARI between consecutive rolling windows (same representation), evaluated on disjoint window segments. AMI (Adjusted Mutual Information; \citealp{VinhEppsBailey2010}) follows the same ordering, confirming that the finding is not an artifact of ARI's known sensitivity to large clusters \citep{WarrensvanderHoef2022}. HMM exhibits materially wider seed-level variance than GMM (CI $\pm 0.034$ versus $\pm 0.002$ for cross-representation ARI), so HMM point estimates carry correspondingly larger uncertainty. Per-pair permutation tests ($B=99$, one-sided): 98\% of pairs exceed random-labelling agreement at $p<0.05$; failing pairs have observed ARI near zero (Supplementary Section~\ref{app:perm_details}) and therefore do not contradict the main finding. See Section~2.5 for dependence caveats. \\
 \textit{Source:} Authors' calculations.
 \end{table}
 
 \subsection{Step sensitivity and overlap}
 
-Rolling-window overlap mechanically inflates temporal ARI: adjacent windows with step $s$ share fraction $(W-s)/W$ of their observations, so short steps produce autocorrelated state sequences even under an i.i.d.\ null. This is a well-known artifact of rolling estimation \citep{vonLuxburg2010}. To quantify how much of the apparent temporal stability reflects overlap rather than genuine regime persistence, we vary step size in $\{21, 63, 126, 252\}$ while keeping the window fixed at 252 business days. Table~\ref{tab:step_sensitivity} reports mean $\pm$ 95\% CI across assets.
+Rolling-window overlap mechanically inflates temporal ARI: adjacent windows with step $s$ share fraction $(W-s)/W$ of their observations, so short steps produce autocorrelated state sequences even under an i.i.d.\ null. This is a well-known artifact of rolling estimation \citep{vonLuxburg2010}. To quantify how much of the apparent temporal stability reflects overlap rather than genuine regime persistence, we vary step size in $\{21, 63, 126, 252\}$ while keeping the window fixed at 252 business days. Table~\ref{tab:step_sensitivity} reports both the disjoint and overlap temporal ARI (Section~2.5) alongside cross-representation ARI, with mean $\pm$ 95\% CI across assets.
 
-Temporal ARI declines as step increases (and overlap falls), consistent with overlap inflation at short steps. Cross-representation ARI, by contrast, remains low and roughly flat at about 0.34 across all step sizes, confirming that representation-driven disagreement is not a product of overlap and persists even when windows are fully non-overlapping (step $=252$).
+Both temporal metrics decline as step increases, but their levels differ sharply: at a step size of 21 days (92\% overlap) the overlap metric is 0.617 while the disjoint metric is 0.411; the gap of ${\sim}0.21$ quantifies the overlap inflation. The overlap metric drops from 0.617 to 0.490 as the step size increases from 21 to 126 days, and is undefined at a step size of 252 days where windows share no observations. The disjoint metric falls further to 0.140 at a step size of 252 days, but this value should be interpreted with care: at full non-overlap, the disjoint metric compares labels from independently estimated models separated by one calendar year, so low agreement may reflect estimation instability across non-overlapping samples rather than (or in addition to) low regime persistence. Cross-representation ARI, by contrast, remains low and roughly flat at about 0.39 across all step sizes, confirming that representation-driven disagreement is not a product of overlap and persists even when windows are fully non-overlapping.
 
-For the \SPX{} during the COVID-19 crash, Figure~\ref{fig:rep_conflict} illustrates the same mechanism visually: two admissible representations assign different state labels over the same interval, with disagreement concentrated in the crisis window when allocation and risk limits matter most. Representation uncertainty is therefore a first-order component of model risk in regime-based strategies, because it introduces arbitrariness into the de-risking process that is typically not visible to the end user.
+For the \SPX{} during the COVID-19 crash, Figure~\ref{fig:rep_conflict} illustrates the same mechanism visually: two admissible representations assign different state labels over the same interval, with disagreement concentrated in the crisis window when allocation and risk limits matter most. Identical market data can trigger different risk-reduction actions under equally defensible representations, and this arbitrariness is typically invisible to the end user.
 
 \begin{table}[!htbp]
 \centering
@@ -182,66 +197,110 @@ For the \SPX{} during the COVID-19 crash, Figure~\ref{fig:rep_conflict} illustra
 \setlength{\tabcolsep}{5pt}
 \caption{Temporal and cross-representation ARI by step size (mean $\pm$ 95\% CI across assets).}
 \label{tab:step_sensitivity}
-\begin{tabular}{rcc}
+\begin{tabular}{rccc}
 \toprule
-Step & Cross-rep.\ ARI & Temporal ARI \\
+Step & Cross-rep.\ ARI & Temporal ARI (disjoint) & Temporal ARI (overlap) \\
 \midrule
-21  & 0.339 $\pm$ 0.023 & 0.577 $\pm$ 0.021 \\
-63  & 0.339 $\pm$ 0.022 & 0.503 $\pm$ 0.019 \\
-126 & 0.343 $\pm$ 0.016 & 0.455 $\pm$ 0.016 \\
-252 & 0.340 $\pm$ 0.026 & --- \\
+21 & 0.385 $\pm$ 0.020 & 0.411 $\pm$ 0.013 & 0.617 $\pm$ 0.017 \\
+63 & 0.386 $\pm$ 0.018 & 0.180 $\pm$ 0.027 & 0.542 $\pm$ 0.013 \\
+126 & 0.391 $\pm$ 0.019 & 0.193 $\pm$ 0.016 & 0.490 $\pm$ 0.009 \\
+252 & 0.389 $\pm$ 0.023 & 0.140 $\pm$ 0.016 & --- \\
 \bottomrule
 \end{tabular}
 \medskip
 \footnotesize
-\textit{Notes:} Step = number of business days between consecutive rolling windows; window $=252$; ARI averaged across GMM and HMM. At step $=252$ windows are non-overlapping; temporal ARI is omitted as it measures annual repeatability rather than monitoring stability. \\
+\textit{Notes:} Step = number of business days between consecutive rolling windows; window $=252$; $K=3$; 20 seeds; 7 representations including rep\_d (GARCH-vol); ARI averaged across GMM and HMM. CI = 95\% confidence interval across the four assets (i.e.\ $t_{3,0.975} \times \text{SE}$, where SE is the standard error of the four per-asset means). Temporal ARI (disjoint) compares labels on the $s$ dates unique to each window, paired positionally (Section~2.5); temporal ARI (overlap) compares labels on the $W - s$ shared dates. At step $= 252$ windows share no observations, so the overlap metric is undefined (---). The gap between the two temporal columns quantifies overlap inflation. \\
 \textit{Source:} Authors' calculations.
 \end{table}
 
 \begin{figure}[H]
 \centering
 \includegraphics[width=1\linewidth]{fig_representation_conflict.png}
-\caption{Representation conflict under COVID-19 stress for the \SPX{} (February--June 2020). Layer A is rep\_a (volatility 20d, drawdown 60d, VaR/CVaR 60d, rolling $z$-score standardized); Layer B is rep\_c1 (volatility 30d, drawdown 90d, VaR/CVaR 90d, rolling $z$-score standardized). Both are economically admissible specifications. The upper bands show state assignments under each representation (HMM, $K=3$; GMM produces qualitatively similar conflict patterns); the bottom strip marks dates where the two representations disagree. Disagreement clusters in the crisis interval when regime classification matters most for allocation and risk management.}
+\caption{Representation conflict under COVID-19 stress for the \SPX{} (February--June 2020). rep\_a uses volatility (20d), drawdown (60d), MaxDD, VaR/CVaR (60d) with rolling $z$-score standardization; rep\_c1 uses volatility (30d), drawdown (90d), VaR/CVaR (90d) with the same standardization. Both are risk-based representations differing only in window parameterization. The upper bands show state assignments under each representation (HMM, $K=3$; GMM produces qualitatively similar conflict patterns); the bottom strip marks dates where the two representations assign different risk labels. Disagreement clusters in the crisis interval when regime classification matters most for allocation and risk management. Figure~\ref{fig:disagree_ts} quantifies this disagreement across the full sample.}
 \label{fig:rep_conflict}
 \end{figure}
 
-\subsection{Robustness}
+\begin{figure}[H]
+\centering
+\includegraphics[width=1\linewidth]{fig_disagreement_timeseries.png}
+\caption{Cross-representation disagreement rate for the \SPX{} (full sample, HMM, $K=3$). For each trading day, the disagreement rate is the fraction of admissible representation pairs that assign different coarse risk labels (high-risk versus not). The curve is smoothed with a 63-day rolling average. Shaded regions mark the COVID-19 crash (February--June 2020) and the 2022 inflation shock (January--October 2022). Disagreement is persistent throughout the sample and intensifies during stress episodes, consistent with the interpretation that representation uncertainty is most consequential when it matters most.}
+\label{fig:disagree_ts}
+\end{figure}
 
-As a robustness check, we sweep over $K \in \{2,3,4\}$ and 20 random seeds per cell under a fixed window and step. Table~\ref{tab:robustness} reports mean cross-representation and temporal ARI, together with asset-average 95\% confidence intervals across seeds. HMM shows substantially larger seed-level variance than GMM, especially in cross-representation agreement. The qualitative message is unchanged: temporal agreement exceeds cross-representation agreement, and both are sensitive to representation. We also compare standardized and unstandardized representations (rep\_a versus rep\_a\_unscaled in Appendix Table~\ref{tab:rep_definitions}). Cross-representation ARI between these two specifications remains materially below unity for all four assets, showing that the preprocessing choice alone---holding all other design decisions fixed---is sufficient to alter inferred state partitions. For governance, the more relevant distinction is between partition instability and ordering instability. Despite low partition-level ARI, Appendix Table~\ref{tab:ordering} shows that coarse risk-ordering consistency remains high across representations, with highest-risk-state top-1 agreement above 0.91 for all four assets and cross-representation rank correlation in the range 0.886--0.907. The conclusions are therefore robust to alternative $K$, initialisations, and preprocessing choices.
+\subsection{State-number sensitivity}
+
+We sweep over $K \in \{2,3,4\}$ to test whether the baseline finding is specific to the $K=3$ partition. Table~\ref{tab:robustness} reports mean cross-representation and temporal ARI with asset-average 95\% confidence intervals across 20 seeds (the $K=3$ row matches the baseline specification in Table~\ref{tab:baseline}). The core qualitative finding is unchanged across $K$: cross-representation ARI remains well below the 0.65 poor-recovery threshold at every $K$ (GMM 0.42--0.44, HMM 0.32--0.43), so practical representation-invariant stability fails irrespective of state-number choice. The relative ordering between temporal and cross-representation agreement, however, does depend on $K$: temporal ARI materially exceeds cross-representation ARI at $K=2$ (by ${\sim}0.13$--$0.19$); at $K=3$ the gap narrows and becomes model-dependent (HMM temporal still exceeds cross-representation by ${\sim}0.07$, while GMM reverses, with cross marginally above temporal); at $K=4$ cross-representation ARI exceeds temporal for GMM ($0.420$ versus $0.308$) while HMM is effectively tied ($0.311$ versus $0.317$). As the partition becomes finer, temporal agreement degrades substantially while cross-representation agreement is roughly constant for GMM and mildly decreasing for HMM. The GMM reversal (cross-representation ARI exceeding temporal ARI already at $K=3$, more starkly at $K=4$) admits a natural explanation: GMM, lacking transition dynamics, is sensitive to which observations fall inside each estimation window; as the number of components grows the mixture becomes fragile to small shifts in the window, degrading temporal consistency, while the representation-level structure (which features and windows define the input space) still constrains the partition enough to maintain cross-representation agreement. The apparent ranking of the two instability sources is therefore not a fixed property of the data but a function of the granularity of the state space and the model class.
+
+We additionally isolate the preprocessing dimension by comparing standardized and unstandardized versions of the same feature set (rep\_a versus rep\_a\_unscaled in Supplementary Table~\ref{tab:rep_definitions}). Cross-representation ARI between these two specifications remains materially below unity for all four assets (0.29--0.32), showing that the preprocessing choice alone (holding features, windows, and models fixed) is sufficient to alter inferred state partitions.
+
+The central finding (low partition-level cross-representation agreement) is therefore robust to seed choice, state number, and preprocessing. Coarse ordering metrics appear high in absolute terms (Supplementary Table~\ref{tab:ordering}) but do not consistently exceed the Hungarian-matched permutation baseline at $K=3$, with per-asset observed and null values showing a kurtosis-dependent split; as discussed in Supplementary Section~\ref{app:ordering}, this test has limited discriminative power due to structural inflation of the null, so the ordering question remains open. At the partition level, representation uncertainty is a material source of model risk; cross-representation diagnostics are warranted regardless of the ordering outcome.
 
 \begin{table}[!htbp]
 \centering
 \small
 \setlength{\tabcolsep}{4pt}
-\caption{Seed-level robustness (mean $\pm$ asset-average 95\% CI across 20 seeds).}
+\caption{State-number sensitivity (mean $\pm$ asset-average 95\% CI across 20 seeds).}
 \label{tab:robustness}
 \begin{tabular}{rcccc}
 \toprule
 $K$ & GMM Cross & HMM Cross & GMM Temp & HMM Temp \\
 \midrule
-2 & 0.402 $\pm$ 0.002 & 0.402 $\pm$ 0.072 & 0.719 $\pm$ 0.004 & 0.685 $\pm$ 0.060 \\
-3 & 0.390 $\pm$ 0.002 & 0.334 $\pm$ 0.031 & 0.669 $\pm$ 0.004 & 0.568 $\pm$ 0.058 \\
-4 & 0.400 $\pm$ 0.001 & 0.301 $\pm$ 0.033 & 0.666 $\pm$ 0.003 & 0.480 $\pm$ 0.058 \\
+2 & 0.436 $\pm$ 0.002 & 0.432 $\pm$ 0.070 & 0.567 $\pm$ 0.003 & 0.625 $\pm$ 0.048 \\
+3 & 0.415 $\pm$ 0.002 & 0.355 $\pm$ 0.034 & 0.396 $\pm$ 0.005 & 0.425 $\pm$ 0.028 \\
+4 & 0.420 $\pm$ 0.002 & 0.317 $\pm$ 0.035 & 0.308 $\pm$ 0.006 & 0.311 $\pm$ 0.031 \\
 \bottomrule
 \end{tabular}
 \par\medskip
 \footnotesize
-\parbox{0.95\linewidth}{\textit{Notes:} Cross = cross-representation ARI; Temp = temporal ARI. Window $=252$, step $=21$.\\
+\parbox{0.95\linewidth}{\textit{Notes:} Cross = cross-representation ARI; Temp = temporal ARI. Window $=252$, step $=21$; 7 representations including rep\_d (GARCH-vol). The $K=3$ row corresponds to the baseline specification reported in Table~\ref{tab:baseline}.\\
 \textit{Source:} Authors' calculations.}
 \end{table}
 
+\subsection{Instability or plurality?}
+\label{sec:discussion}
+
+The empirical results establish that cross-representation ARI is low and not meaningfully above the chance baseline for coarse ordering. Before drawing governance conclusions, the interpretive status of this finding deserves scrutiny.
+
+In supervised learning, \citet{DAmouretal2022} diagnose underspecification by comparing models that are observationally equivalent on held-out data. Their framework presupposes a performance criterion that anchors the comparison: two pipelines are underspecified precisely because they achieve the same in-distribution loss yet diverge out of distribution. Regime identification lacks any such anchor. There is no held-out labelling, no ``true'' partition against which to evaluate, and ARI between two unsupervised partitions measures agreement, not accuracy. A low cross-representation ARI is therefore consistent with two distinct interpretations.
+
+The first is \emph{instability}: the representation layer introduces a defect, and a ``better'' pipeline would converge to a single stable partition. Under this reading, the low ARI is a diagnostic failure that calls for model repair, e.g.\ tighter feature selection, stronger regularisation, or alternative estimation strategies.
+
+The second is \emph{irreducible plurality}: multiple partitions are equally valid descriptions of a non-stationary process, and no amount of engineering will collapse them to one. Under this reading, low ARI is not a defect but a structural property of the inference problem, and governance should shift from seeking the ``correct'' partition to reporting the \emph{distribution} of plausible partitions and their downstream consequences.
+
+A synthetic experiment provides partial resolution. We generate data from a known 3-state regime-switching process (Markov chain with persistence $p=0.97$, three volatility levels, and deterministic drift; 10 seeds, 3 fit seeds per DGP realisation) and run the same representation pipeline. If cross-representation ARI were low because multiple valid partitions coexist, we would expect each representation to recover the true labels well (high ARI vs.\ ground truth) even while disagreeing with each other. Instead, we find the opposite: ARI versus ground truth averages 0.264 (HMM) and 0.273 (GMM), comparable to the cross-representation ARI itself (0.305 and 0.383). The low cross-representation agreement in the empirical data is therefore more consistent with \emph{instability} than with \emph{plurality}: the representation-to-model pipeline fails to recover the true partition even when one exists.
+
+This does not settle the question for real markets, where the DGP is unknown and may not admit a unique partition. But it shifts the prior: the low ARI observed in practice is at least partly attributable to genuine inference failure, not merely to the coexistence of equally valid descriptions. What the results do establish is that \emph{whichever interpretation is adopted, the current practice of reporting a single regime classification without cross-representation sensitivity analysis is inadequate}. If the problem is instability, validation must diagnose it. If the problem is plurality, reporting must communicate it. In either case, cross-representation diagnostics are a necessary complement to conventional temporal validation. This conclusion is consistent with the direction of SR 11-7 \citep{SR117} toward uncertainty-aware reporting, and suggests that regime identification may benefit from the ensemble and decision-theoretic approaches already standard in other domains of financial risk modelling.
+
 \section{Conclusion}
 
-Across four single-asset case studies, regime classifications produced by standard GMM and HMM pipelines are sensitive to admissible representation choices. Cross-representation ARI falls below 0.65---\citet{Steinley2004}'s threshold for poor partition recovery---and is statistically distinguishable from zero but far from unity; AMI values are similarly low, confirming the finding is not an artifact of ARI's large-cluster sensitivity \citep{WarrensvanderHoef2022}. The step sweep shows that much of the apparent temporal stability at short steps is a well-known overlap artifact; representation-driven disagreement persists even at step $=252$, where windows are fully non-overlapping.
+Across four single-asset case studies, regime classifications produced by standard GMM and HMM pipelines are sensitive to admissible representation choices. Cross-representation ARI falls below 0.65, \citet{Steinley2004}'s threshold for poor partition recovery; AMI values confirm the same ranking, ruling out large-cluster artifacts \citep{WarrensvanderHoef2022}. The step sweep reveals that much of the apparent temporal stability at short steps is an overlap artifact; representation-driven disagreement persists even when windows are fully non-overlapping. Because the admissible class intentionally includes near-redundant specifications (shared tail features and window parameterisations), the low ARI constitutes a conservative lower bound on the disagreement that would arise under a broader class. The inclusion of a GARCH(1,1) conditional-volatility representation confirms that the finding is not confined to a single volatility estimation paradigm.
 
-The governance implication is practical. When exact partition stability is weak, validation should report both partition agreement and ordering consistency across representations. Fine-grained regime labels may be unreliable even when a fixed specification appears stable, whereas coarse risk ordering (Appendix Table~\ref{tab:ordering}) may be the more defensible object for downstream use. Our analysis is restricted to single-asset, rolling-window settings and does not address forecasting or portfolio performance; extending the framework to multivariate regime models and a larger cross-section of assets remains for future work. Cross-representation diagnostics should therefore become a standard complement to conventional temporal validation in risk-sensitive financial applications.
+Coarse risk-ordering metrics appear high in absolute terms but do not consistently exceed the Hungarian-matching permutation baseline at $K=3$---observed $<$ null for high-kurtosis assets (BTC-USD, GLD) and observed $>$ null for lower-kurtosis assets (S\&P 500, IEF), with overall means coinciding (Supplementary Table~\ref{tab:ordering}). This test has limited discriminative power due to the structural inflation of the null (Supplementary Section~\ref{app:ordering}), so the extension to coarse ordering remains an open question.
 
+\paragraph{Economic significance and model risk governance.}
+When a risk manager calibrates a regime model at one feature specification and uses it to set limits at the same or an adjacent specification, they unknowingly inherit the representation model risk quantified above. Regime-conditional CVaR estimates for the same asset diverge by 38--90\% of the unconditional CVaR on average, and by more than 280\% during the COVID-19 stress window for BTC-USD. Under SR 11-7 \citep{SR117}, this constitutes an unquantified model limitation that single-specification backtesting cannot detect.
+
+We propose a \emph{representation envelope}: compute the regime-conditional risk measure (e.g.\ regime-conditional CVaR) under each admissible representation and report both the point estimate and the cross-representation range $[\min_\Phi, \max_\Phi]$. When the envelope width exceeds a materiality threshold (e.g.\ 10\% of the unconditional risk measure), or when cross-representation ARI falls below \citet{Steinley2004}'s 0.65 poor-recovery threshold, the modeller should adopt the conservative representation or form an ensemble across specifications. More broadly, multi-representation cross-validation should be incorporated into the model validation cycle mandated by SR 11-7 and analogous frameworks. A regime model that passes conventional temporal backtesting but produces materially different labels under adjacent admissible feature sets has an undocumented limitation; the representation envelope provides a quantitative trigger for escalation. Regime labels are sensitive to both feature choice and temporal resolution \citep{companion_res}; a complete model-validation framework should track both dimensions.
+
+\emph{Limitations.} Four assets are treated as independent case studies rather than a statistical sample. The admissible representation class, while spanning four variation dimensions and including a GARCH-based specification, remains restricted to daily-frequency, single-asset, univariate features with a fixed 252-day estimation window; extension to multivariate features, higher-frequency data, and alternative model classes remains for future work.
+
+%%% ---- Supplementary Material (Internet Appendix) ---- %%%
 \appendix
+\renewcommand{\thesection}{S\arabic{section}}
+\renewcommand{\thetable}{S\arabic{table}}
+\renewcommand{\theequation}{S\arabic{equation}}
+\setcounter{table}{0}
+\setcounter{section}{0}
+\setcounter{equation}{0}
+
+\section*{Supplementary Material}
+
+The following tables and analyses are available as an Internet Appendix.
 
 \section{Feature Representation Definitions}
 \label{app:representations}
 
-Table~\ref{tab:rep_definitions} lists the six admissible representations used in the baseline and step-sweep experiments. All features are computed from daily log returns $r_t = \log(P_t/P_{t-1})$ or from the adjusted-close price series $P_t$. Rolling windows are measured in business days. VaR and CVaR use a left-tail probability of $\alpha=0.05$.
+Table~\ref{tab:rep_definitions} lists the seven admissible representations used in the baseline and step-sweep experiments. All features are computed from daily log returns $r_t = \log(P_t/P_{t-1})$ or from the adjusted-close price series $P_t$. Rolling windows are measured in business days. VaR and CVaR use a left-tail probability of $\alpha=0.05$.
 
 \begin{table}[!htbp]
 \centering
@@ -249,22 +308,24 @@ Table~\ref{tab:rep_definitions} lists the six admissible representations used in
 \setlength{\tabcolsep}{4pt}
 \caption{Admissible feature representations.}
 \label{tab:rep_definitions}
-\begin{tabular}{p{2.4cm}p{5.2cm}p{4.0cm}p{2.2cm}}
+\begin{tabular}{>{\raggedright\arraybackslash}p{2.0cm}>{\raggedright\arraybackslash}p{4.5cm}>{\raggedright\arraybackslash}p{3.3cm}>{\raggedright\arraybackslash}p{1.8cm}}
 \toprule
 Label & Features & Windows (days) & Std. \\
 \midrule
 rep\_a         & Vol, Drawdown, MaxDD, VaR, CVaR   & vol=20, dd=60, tail=60    & $z$-120d \\
-rep\_a\_unscaled & Vol, Drawdown, MaxDD, VaR, CVaR & vol=20, dd=60, tail=60    & None \\
+\seqsplit{rep\_a\_unscaled} & Vol, Drawdown, MaxDD, VaR, CVaR & vol=20, dd=60, tail=60    & None \\
 rep\_b         & RealSkew, VolStab, VaR, CVaR       & skew=60, stab=60, tail=60 & $z$-120d \\
 rep\_c1        & Vol, Drawdown, VaR, CVaR           & vol=30, dd=90, tail=90    & $z$-120d \\
 rep\_c2        & Vol, Drawdown, MaxDD, CVaR         & vol=20, dd=60, tail=60    & $z$-120d \\
 rep\_c3        & Vol, Drawdown, VaR, CVaR           & vol=20, dd=60, tail=60    & $z$-120d \\
+\midrule
+rep\_d         & GARCHVol, Drawdown, VaR, CVaR      & dd=60, tail=60            & $z$-120d \\
 \bottomrule
 \end{tabular}
 \par\medskip
 \begin{minipage}{\linewidth}
 \footnotesize
-\textit{Notes:} Std.\ = standardization; $z$-120d = rolling $z$-score with 120-day lookback; None = no standardization. Vol = annualised realised volatility; Drawdown = rolling drawdown from period high; MaxDD = rolling maximum drawdown; VaR/CVaR = historical Value-at-Risk/Conditional VaR at 5\%; RealSkew = rolling realised skewness; VolStab = volatility-of-volatility.
+\textit{Notes:} Std.\ = standardization; $z$-120d = rolling $z$-score with 120-day lookback; None = no standardization. Vol = annualised realised volatility; GARCHVol = annualised conditional volatility from a GARCH(1,1) model; Drawdown = rolling drawdown from period high; MaxDD = rolling maximum drawdown; VaR/CVaR = historical Value-at-Risk/Conditional VaR at 5\%; RealSkew = rolling realised skewness; VolStab = volatility-of-volatility. Representations rep\_a through rep\_c3 share a rolling-window architecture; rep\_d uses a parametric autoregressive volatility estimator, providing a structurally heterogeneous specification.
 
 \textit{Source:} Authors' design.
 \end{minipage}
@@ -273,7 +334,10 @@ rep\_c3        & Vol, Drawdown, VaR, CVaR           & vol=20, dd=60, tail=60    
 \section{Ordering Consistency}
 \label{app:ordering}
 
-Table~\ref{tab:ordering} reports cross-representation coarse-ordering consistency at the baseline specification (window $=252$, step $=21$, $K=3$). Despite low partition-level ARI (Table~\ref{tab:baseline}), the highest-risk state is identified consistently across representations, with top-1 agreement above 0.91 for all four assets and Spearman rank correlation in the range 0.886--0.907.
+Table~\ref{tab:ordering} reports cross-representation coarse-ordering consistency at the baseline specification (window $=252$, step $=21$, $K=3$), alongside the chance-level baseline under random label permutation with the same Hungarian matching procedure. Top-1 agreement ranges 0.92--0.95 across assets, with a mean of 0.932; the permutation null averages 0.932. Spearman rank correlation ranges 0.889--0.909 against a null mean of 0.908. Per-asset inspection reveals a split masked by the mean: for BTC-USD and GLD the observed values fall below the null (top-1 obs $<$ 0.98 null for BTC; $<$ 0.96 for GLD), while for S\&P 500 and IEF the observed values marginally exceed the null. With only three states to rank, a single pair-swap separates $\rho = 0.5$ from $\rho = 1.0$, so the metric has limited discriminative power at this granularity.
+
+\textbf{Methodological caveat on the permutation null.}\enspace
+The null is constructed by randomly permuting one state sequence's labels, recomputing risk profiles, and Hungarian-matching the permuted profiles to the original. Because randomly relabelled states are random subsamples of the unconditional return distribution, their risk profiles (CVaR, Vol) converge to nearly identical values. Hungarian matching on near-homogeneous profiles is trivially rank-aligned: the optimiser maps the original's highest-risk state to whichever permuted state has the most extreme random fluctuation, mechanically producing high Spearman. The null therefore reflects the ease of matching structured profiles to homogeneous ones, not the probability of observing ordering by chance between two independently structured partitions. This structural inflation means that observed $<$ null should be read as ``the test cannot confirm ordering above the inflated baseline,'' not as ``ordering is no better than random.'' The inflation is especially pronounced for high-kurtosis assets (BTC-USD, GLD in Table~\ref{tab:ordering}): random permutation of a single state sequence against homogeneous risk profiles mechanically produces Spearman ${\ge}0.93$ and top-1 ${\ge}0.96$ for these assets, well above the values obtained for the lower-kurtosis assets (S\&P 500, IEF), whose observed metrics in turn marginally exceed the null. The overall mean equality (observed = null = 0.932 for top-1) therefore masks asset-level splitting rather than uniform null-matching. Resolving whether cross-representation ordering genuinely persists would require either (i)~a null based on two independently generated random $K$-partitions (where both sides have genuine between-state structure), or (ii)~testing at $K\ge 5$, where the Spearman statistic gains sufficient resolution and the Hungarian null is less inflated.
 
 \begin{table}[!htbp]
 \centering
@@ -281,30 +345,57 @@ Table~\ref{tab:ordering} reports cross-representation coarse-ordering consistenc
 \setlength{\tabcolsep}{6pt}
 \caption{Cross-representation ordering consistency by asset (baseline specification).}
 \label{tab:ordering}
-\begin{tabular}{lcc}
+\begin{tabular}{lcccc}
 \toprule
-Asset & Top-1 Agreement & Spearman Rank Corr. \\
+ & \multicolumn{2}{c}{Top-1 Agreement} & \multicolumn{2}{c}{Spearman Rank Corr.} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}
+Asset & Observed & Null & Observed & Null \\
 \midrule
-BTC-USD  & 0.939 & 0.893 \\
-GLD      & 0.915 & 0.895 \\
-S\&P 500 & 0.939 & 0.907 \\
-IEF      & 0.913 & 0.886 \\
+BTC-USD  & 0.946 & 0.976 & 0.896 & 0.930 \\
+GLD      & 0.919 & 0.962 & 0.898 & 0.930 \\
+S\&P 500 & 0.943 & 0.894 & 0.909 & 0.882 \\
+IEF      & 0.919 & 0.896 & 0.889 & 0.892 \\
 \midrule
-Mean     & 0.927 & 0.895 \\
+Mean     & 0.932 & 0.932 & 0.898 & 0.908 \\
 \bottomrule
 \end{tabular}
 \par\medskip
 \begin{minipage}{\linewidth}
 \footnotesize
-\textit{Notes:} Top-1 Agreement = fraction of rolling windows where the highest-risk state label (by mean downside volatility) agrees across all admissible representation pairs. Spearman Rank Corr.\ = cross-representation Spearman correlation of state-level risk ordering. Both metrics are averaged across GMM and HMM models and seeds $\{1,2\}$.
+\textit{Notes:} The highest-risk state in each rolling window is identified by the most negative in-state Conditional VaR (CVaR at $\alpha = 0.05$), computed from the log returns observed while that state is active. Top-1 Agreement = fraction of rolling windows in which two representations' highest-risk states are matched by Hungarian assignment on $|\Delta\mathrm{CVaR}| + |\Delta\mathrm{Vol}|$ and then agree on the high-risk label. Spearman Rank Corr.\ = Spearman correlation of the $K$ states' CVaR-based risk ranks under the same matching. Observed values are averaged across GMM and HMM models, 20 random seeds, and all admissible representation pairs. Null values are per-asset means under 500 random label permutations with the same Hungarian matching; the high null levels (especially for BTC-USD and GLD) reflect the small state space ($K=3$) and the optimisation implicit in Hungarian assignment (see the methodological caveat above).
 
 \textit{Source:} Authors' calculations.
 \end{minipage}
 \end{table}
 
+\section{Per-pair Permutation Test Details}
+\label{app:perm_details}
+
+Table~\ref{tab:perm_per_asset} reports the distribution of per-pair permutation p-values at the baseline specification.
+
+\begin{table}[!htbp]
+\centering
+\small
+\caption{Per-pair permutation test by asset (baseline specification: window $=252$, step $=21$, $K=3$; $B=99$ permutations, 2{,}000 pairs per asset).}
+\label{tab:perm_per_asset}
+\begin{tabular}{lcccc}
+\toprule
+Asset & Mean obs.\ ARI & Median $p$ & \% $p<0.05$ & \% $p\ge 0.05$ \\
+\midrule
+BTC-USD & 0.393 & 0.010 & 98.5 & 1.5 \\
+GLD     & 0.389 & 0.010 & 98.1 & 1.9 \\
+GSPC    & 0.382 & 0.010 & 98.0 & 2.0 \\
+IEF     & 0.365 & 0.010 & 97.9 & 2.1 \\
+\bottomrule
+\end{tabular}
+\medskip
+\footnotesize
+\textit{Notes:} Per-pair null is one-sided permutation of a single representation's label sequence, recomputed ARI. Pairs with $p\ge 0.05$ correspond to (model, seed, rolling window, representation-pair) combinations for which the observed ARI lies within $[-0.127,\,0.047]$ with asset-level medians between $-0.001$ and $0.006$; for such pairs the observed and permuted ARI are both concentrated near zero, so the test correctly fails to reject. These residuals therefore indicate occasional windows in which two representations yield near-independent partitions, rather than evidence against the main finding. The presence of a small fraction (${\sim}2\%$) of non-rejecting pairs is consistent with the theoretical framework: when two representations yield near-independent partitions in a specific window (a natural endpoint of the dissonance studied in this paper), both the observed statistic and its permutation distribution concentrate near zero, so the test correctly fails to reject. The main finding (mean off-diagonal ARI well below 0.65) is established by the aggregate distribution rather than by universal per-pair rejection.
+\end{table}
+
 \section*{Data availability}
 
-Data are obtained from Yahoo Finance via \texttt{yfinance}. Code and processed outputs are available from the authors upon request.
+Daily price data are obtained from Yahoo Finance via the Python package \texttt{yfinance}. The diagnostic framework is implemented in the open-source Python library \textbf{mrv-lib} (see Code Availability below); experiment-specific scripts and processed outputs are available from the authors upon request.
 
 \section*{Declaration of competing interest}
 
@@ -313,6 +404,10 @@ The authors declare that they have no known competing financial interests or per
 \section*{Acknowledgements}
 
 This research received no specific grant from any funding agency in the public, commercial, or not-for-profit sectors.
+
+\section*{Code availability}
+
+The diagnostic framework described in this paper is implemented as an open-source Python library, \textbf{mrv-lib}, available at \url{https://mrv-lib.org} and via PyPI (\texttt{pip install mrv-lib}). Source code: \url{https://github.com/modelguard-lab/mrv-lib}.
 
 \bibliography{refs}
 

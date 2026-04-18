@@ -43,16 +43,54 @@ def aggregate_scores(results_dir: Path) -> pd.DataFrame:
 
 def aggregate_stability(results_dir: Path) -> pd.DataFrame:
     records: List[Dict] = []
-    for p in Path(results_dir).rglob("rep_stability.json"):
+    base = Path(results_dir)
+    legacy_paths = sorted(base.rglob("stability.json"))
+    legacy_dirs = {p.parent.resolve() for p in legacy_paths}
+
+    for p in sorted(base.rglob("rep_stability.json")):
+        if p.parent.resolve() in legacy_dirs:
+            logger.warning("aggregate_stability: skipping %s because stability.json exists nearby", p)
+            continue
         payload = _read_json(p)
         records.extend(payload.get("rep_stability", []))
-    for p in Path(results_dir).rglob("window_stability.json"):
+    for p in sorted(base.rglob("window_stability.json")):
+        if p.parent.resolve() in legacy_dirs:
+            logger.warning("aggregate_stability: skipping %s because stability.json exists nearby", p)
+            continue
         payload = _read_json(p)
         records.extend(payload.get("window_stability", []))
-    for p in Path(results_dir).rglob("stability.json"):
+    for p in legacy_paths:
         payload = _read_json(p)
         records.extend(payload.get("stability", []))
     df = pd.DataFrame(records)
+    if not df.empty:
+        dedup_keys = [
+            "rep_a",
+            "rep_b",
+            "rep",
+            "model",
+            "K",
+            "window",
+            "seed",
+            "roll",
+            "roll_a",
+            "roll_b",
+            "ari",
+            "nmi",
+            "ami",
+            "vi",
+        ]
+        present_keys = [c for c in dedup_keys if c in df.columns]
+        if present_keys:
+            before = int(len(df))
+            df = df.drop_duplicates(subset=present_keys, keep="last")
+            if len(df) < before:
+                logger.warning(
+                    "aggregate_stability: dropped %d duplicate rows (from %d to %d)",
+                    before - len(df),
+                    before,
+                    len(df),
+                )
     if not df.empty:
         logger.debug("aggregate_stability: %d records from %s", len(df), results_dir)
     return df

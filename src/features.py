@@ -58,6 +58,41 @@ def _compute_tail_risk(returns: pd.Series, window: int, alpha: float) -> tuple[p
     return var.rename("var"), cvar.rename("cvar")
 
 
+def _compute_garch_vol(returns: pd.Series) -> pd.Series:
+    """Annualised conditional volatility from a GARCH(1,1) model.
+
+    Fits a single GARCH(1,1) to the full return series and extracts the
+    one-step-ahead conditional standard deviation, annualised by sqrt(252).
+    Falls back to rolling 20-day realised volatility if the GARCH fit fails
+    (e.g. too few observations or convergence failure).
+    """
+    try:
+        from arch import arch_model  # optional dependency
+    except ImportError as exc:
+        raise ImportError(
+            "The 'arch' package is required for GARCH features. "
+            "Install it with: pip install arch>=5.0"
+        ) from exc
+
+    # arch expects returns in percentage points for numerical stability
+    scaled = returns.dropna() * 100.0
+    if len(scaled) < 50:
+        logger.warning("Series too short for GARCH (%d obs); falling back to rolling vol", len(scaled))
+        return (_compute_volatility(returns, 20)).rename("garch_vol")
+
+    try:
+        model = arch_model(scaled, vol="Garch", p=1, q=1, mean="Zero", rescale=False)
+        result = model.fit(disp="off", show_warning=False)
+        # conditional_volatility is in the same scale as the input (pct points)
+        cond_vol = result.conditional_volatility / 100.0 * np.sqrt(252)
+        out = pd.Series(np.nan, index=returns.index, name="garch_vol")
+        out.loc[cond_vol.index] = cond_vol.values
+        return out
+    except Exception:
+        logger.warning("GARCH fit failed; falling back to rolling vol", exc_info=True)
+        return (_compute_volatility(returns, 20)).rename("garch_vol")
+
+
 def _compute_realized_skew(log_returns: pd.Series, window: int) -> pd.Series:
     return log_returns.rolling(window=window, min_periods=window).skew().rename("realized_skew")
 
@@ -98,7 +133,13 @@ def build_representation_single(price: pd.Series, rep: RepConfig) -> pd.DataFram
     skew = _compute_realized_skew(r, skew_window)
     stab = _compute_stability(vol, stability_window)
 
-    all_feats = pd.concat([vol, dd, mdd, var, cvar, skew, stab], axis=1)
+    # GARCH conditional vol — only computed when requested (avoids arch import overhead)
+    feat_list = [vol, dd, mdd, var, cvar, skew, stab]
+    if "garch_vol" in rep.features:
+        gvol = _compute_garch_vol(r)
+        feat_list.append(gvol)
+
+    all_feats = pd.concat(feat_list, axis=1)
 
     wanted = [f for f in rep.features if f in all_feats.columns]
     if len(wanted) < len(rep.features):

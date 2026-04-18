@@ -24,13 +24,81 @@ import numpy as np
 import pandas as pd
 import yaml
 from joblib import Parallel, delayed
+from joblib.externals.loky.process_executor import TerminatedWorkerError
 from scipy.optimize import linear_sum_assignment
+
+
+# Force single-threaded MKL/OpenBLAS in this process AND any forked workers.
+# This is the root fix for TerminatedWorkerError (MKL segfault on Windows fork).
+for _env_var in ("MKL_NUM_THREADS", "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS",
+                 "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
+    os.environ[_env_var] = "1"
+
+
+def _parallel_or_sequential(func, args_list, n_jobs, label="parallel"):
+    """Run func(*args) for each args in args_list via joblib, with sequential fallback.
+
+    Automatically falls back to sequential when:
+    - n_jobs <= 1 or only 1 task
+    - A TerminatedWorkerError occurs (MKL/loky instability on Windows)
+
+    Logs detailed diagnostics on failure to aid debugging.
+
+    Root cause of TerminatedWorkerError on Windows:
+    numpy/scipy link to Intel MKL which has known thread-safety bugs when
+    forked via loky.  Setting MKL_NUM_THREADS=1 in worker init prevents most
+    segfaults.  If it still occurs, we fall back to sequential.
+    """
+    import time as _t
+    import traceback as _tb
+    t0 = _t.perf_counter()
+    n_tasks = len(args_list)
+    effective = min(n_jobs if n_jobs > 0 else 12, 12, n_tasks)
+
+    if effective <= 1 or n_tasks <= 2:
+        results = [func(*a) for a in args_list]
+        logger.info("%s: done in %.1fs (sequential, %d tasks)", label, _t.perf_counter() - t0, n_tasks)
+        return results
+
+    logger.info("%s: starting parallel; %d tasks, n_jobs=%d", label, n_tasks, effective)
+    try:
+        # Use initializer to force MKL single-thread in each worker
+        results = Parallel(
+            n_jobs=effective,
+            backend="loky",
+        )(
+            delayed(func)(*a) for a in args_list
+        )
+        logger.info("%s: done in %.1fs (parallel, %d tasks, n_jobs=%d)", label, _t.perf_counter() - t0, n_tasks, effective)
+        return results
+    except TerminatedWorkerError:
+        logger.error(
+            "%s: TerminatedWorkerError with n_jobs=%d, %d tasks. "
+            "This is typically caused by MKL memory corruption in loky workers on Windows. "
+            "Falling back to sequential execution.",
+            label, effective, n_tasks,
+        )
+        t0 = _t.perf_counter()
+        results = [func(*a) for a in args_list]
+        logger.info("%s: done in %.1fs (sequential fallback after TerminatedWorkerError, %d tasks)",
+                    label, _t.perf_counter() - t0, n_tasks)
+        return results
+    except Exception as e:
+        logger.error(
+            "%s: unexpected error in parallel execution: %s\n%s",
+            label, e, _tb.format_exc(),
+        )
+        logger.info("%s: falling back to sequential", label)
+        t0 = _t.perf_counter()
+        results = [func(*a) for a in args_list]
+        logger.info("%s: done in %.1fs (sequential fallback, %d tasks)", label, _t.perf_counter() - t0, n_tasks)
+        return results
 from scipy.stats import wasserstein_distance
 from tqdm import tqdm
 
 from data import download_tickers, load_prices
 from features import RepConfig, build_representation_single
-from metrics import semantic_drift, stability_metrics
+from metrics import semantic_drift, stability_metrics, temporal_disjoint_metrics
 from models import fit_gmm, fit_hmm
 from plots import (
     plot_ari_vs_step,
@@ -40,7 +108,7 @@ from plots import (
     plot_pairwise_matrix_heatmap,
 )
 from utils import ensure_dir, rolling_slices, safe_name, save_json
-from paper_autofill import update_empirical_results_md
+from paper_autofill import update_empirical_results_md, update_main_tex_tables
 from synthetic_sanity import run_synthetic_sanity_check
 
 logger = logging.getLogger(__name__)
@@ -314,6 +382,7 @@ def _fit_slice_write_shard(
             "loglik",
             "aic",
             "bic",
+            "hmm_diag_fallback",
             "semantic_drift_mean",
             "semantic_drift_std",
         ]
@@ -327,6 +396,7 @@ def _fit_slice_write_shard(
             "loglik": scores.get("loglik"),
             "aic": scores.get("aic"),
             "bic": scores.get("bic"),
+            "hmm_diag_fallback": scores.get("hmm_diag_fallback"),
             "semantic_drift_mean": scores.get("semantic_drift_mean"),
             "semantic_drift_std": scores.get("semantic_drift_std"),
         }
@@ -578,6 +648,32 @@ def _load_hard_map_from_rep_csv(
     return out
 
 
+def _rep_stability_one_seed(
+    model_name: str, seed: int,
+    hard_map: Dict[Tuple[str, str, int, str], pd.Series],
+    rep_names: List[str], k: int, window: int, rolls: List[str],
+) -> List[Dict]:
+    records: List[Dict] = []
+    for roll in rolls:
+        series: Dict[str, pd.Series] = {}
+        for rep in rep_names:
+            s = hard_map.get((rep, model_name, int(seed), roll))
+            if s is not None:
+                series[rep] = s
+        for i in range(len(rep_names)):
+            for j in range(i + 1, len(rep_names)):
+                a, b = rep_names[i], rep_names[j]
+                if a not in series or b not in series:
+                    continue
+                scores = stability_metrics(series[a], series[b], k)
+                records.append({
+                    "rep_a": a, "rep_b": b, "model": model_name,
+                    "K": k, "window": window, "seed": seed, "roll": roll,
+                    "ari": scores.ari, "nmi": scores.nmi, "ami": scores.ami, "vi": scores.vi,
+                })
+    return records
+
+
 def _compute_rep_stability_from_map(
     hard_map: Dict[Tuple[str, str, int, str], pd.Series],
     rep_names: List[str],
@@ -586,38 +682,64 @@ def _compute_rep_stability_from_map(
     window: int,
     seeds: List[int],
     rolls: List[str],
+    n_jobs: int = -1,
+) -> List[Dict]:
+    from joblib import Parallel, delayed
+    import time as _time
+
+    tasks = [(m, s) for m in models for s in seeds]
+    effective_jobs = min(n_jobs if n_jobs > 0 else 12, 12, len(tasks))
+
+    logger.info("Rep stability: %d tasks, n_jobs=%d", len(tasks), effective_jobs)
+    t0 = _time.perf_counter()
+
+    shards = {}
+    for m, s in tasks:
+        shards[(m, s)] = {key: v for key, v in hard_map.items() if key[1] == m and key[2] == int(s)}
+
+    if effective_jobs <= 1:
+        all_recs = []
+        for m, s in tasks:
+            all_recs.extend(_rep_stability_one_seed(m, s, shards[(m, s)], rep_names, k, window, rolls))
+        logger.info("Rep stability: done in %.1fs (sequential)", _time.perf_counter() - t0)
+        return all_recs
+
+    args = [(m, s, shards[(m, s)], rep_names, k, window, rolls) for m, s in tasks]
+    nested = _parallel_or_sequential(_rep_stability_one_seed, args, effective_jobs, "Rep stability")
+    return [rec for batch in nested for rec in batch]
+
+
+def _window_stability_one_unit(
+    rep: str, model_name: str, seed: int,
+    hard_map: Dict[Tuple[str, str, int, str], pd.Series],
+    k: int, window: int, rolls: List[str],
 ) -> List[Dict]:
     records: List[Dict] = []
-    for model_name in models:
-        for seed in seeds:
-            for roll in rolls:
-                series: Dict[str, pd.Series] = {}
-                for rep in rep_names:
-                    s = hard_map.get((rep, model_name, int(seed), roll))
-                    if s is not None:
-                        series[rep] = s
-                for i in range(len(rep_names)):
-                    for j in range(i + 1, len(rep_names)):
-                        a = rep_names[i]
-                        b = rep_names[j]
-                        if a not in series or b not in series:
-                            continue
-                        scores = stability_metrics(series[a], series[b], k)
-                        records.append(
-                            {
-                                "rep_a": a,
-                                "rep_b": b,
-                                "model": model_name,
-                                "K": k,
-                                "window": window,
-                                "seed": seed,
-                                "roll": roll,
-                                "ari": scores.ari,
-                                "nmi": scores.nmi,
-                                "ami": scores.ami,
-                                "vi": scores.vi,
-                            }
-                        )
+    for i in range(len(rolls) - 1):
+        roll_a, roll_b = rolls[i], rolls[i + 1]
+        a = hard_map.get((rep, model_name, int(seed), roll_a))
+        b = hard_map.get((rep, model_name, int(seed), roll_b))
+        if a is None or b is None:
+            continue
+        scores_overlap = stability_metrics(a, b, k)
+        scores_disjoint = temporal_disjoint_metrics(a, b)
+        idx_a = a.dropna().index
+        idx_b = b.dropna().index
+        n_overlap = int(len(idx_a.intersection(idx_b)))
+        n_union = int(len(idx_a.union(idx_b)))
+        overlap_ratio = float(n_overlap / n_union) if n_union > 0 else float("nan")
+        scores = scores_disjoint
+        records.append({
+            "rep": rep, "model": model_name, "K": k, "window": window,
+            "seed": seed, "roll_a": roll_a, "roll_b": roll_b,
+            "temporal_eval_mode": "disjoint",
+            "overlap_n": n_overlap, "overlap_ratio": overlap_ratio,
+            "ari": scores.ari, "nmi": scores.nmi, "ami": scores.ami, "vi": scores.vi,
+            "ari_overlap": scores_overlap.ari, "nmi_overlap": scores_overlap.nmi,
+            "ami_overlap": scores_overlap.ami, "vi_overlap": scores_overlap.vi,
+            "ari_disjoint": scores_disjoint.ari, "nmi_disjoint": scores_disjoint.nmi,
+            "ami_disjoint": scores_disjoint.ami, "vi_disjoint": scores_disjoint.vi,
+        })
     return records
 
 
@@ -629,35 +751,32 @@ def _compute_window_stability_from_map(
     window: int,
     seeds: List[int],
     rolls: List[str],
+    n_jobs: int = -1,
 ) -> List[Dict]:
-    records: List[Dict] = []
-    for rep in rep_names:
-        for model_name in models:
-            for seed in seeds:
-                for i in range(len(rolls) - 1):
-                    roll_a = rolls[i]
-                    roll_b = rolls[i + 1]
-                    a = hard_map.get((rep, model_name, int(seed), roll_a))
-                    b = hard_map.get((rep, model_name, int(seed), roll_b))
-                    if a is None or b is None:
-                        continue
-                    scores = stability_metrics(a, b, k)
-                    records.append(
-                        {
-                            "rep": rep,
-                            "model": model_name,
-                            "K": k,
-                            "window": window,
-                            "seed": seed,
-                            "roll_a": roll_a,
-                            "roll_b": roll_b,
-                            "ari": scores.ari,
-                            "nmi": scores.nmi,
-                            "ami": scores.ami,
-                            "vi": scores.vi,
-                        }
-                    )
-    return records
+    from joblib import Parallel, delayed
+    import time as _time
+
+    tasks = [(rep, m, s) for rep in rep_names for m in models for s in seeds]
+    effective_jobs = min(n_jobs if n_jobs > 0 else 12, 12, len(tasks))
+
+    logger.info("Window stability: %d tasks, n_jobs=%d", len(tasks), effective_jobs)
+    t0 = _time.perf_counter()
+
+    shards = {}
+    for rep, m, s in tasks:
+        shards[(rep, m, s)] = {key: v for key, v in hard_map.items()
+                               if key[0] == rep and key[1] == m and key[2] == int(s)}
+
+    if effective_jobs <= 1:
+        all_recs = []
+        for rep, m, s in tasks:
+            all_recs.extend(_window_stability_one_unit(rep, m, s, shards[(rep, m, s)], k, window, rolls))
+        logger.info("Window stability: done in %.1fs (sequential)", _time.perf_counter() - t0)
+        return all_recs
+
+    args = [(rep, m, s, shards[(rep, m, s)], k, window, rolls) for rep, m, s in tasks]
+    nested = _parallel_or_sequential(_window_stability_one_unit, args, effective_jobs, "Window stability")
+    return [rec for batch in nested for rec in batch]
 
 
 def _state_return_samples(
@@ -709,6 +828,34 @@ def _matched_wasserstein_cost(samples_a: List[np.ndarray], samples_b: List[np.nd
     return float(np.mean(matched)) if matched.size else float("nan")
 
 
+def _semantic_crossrep_one_seed(
+    model_name: str, seed: int,
+    hard_map: Dict[Tuple[str, str, int, str], pd.Series],
+    returns: pd.Series, rep_names: List[str],
+    k: int, window: int, rolls: List[str],
+) -> List[Dict]:
+    records: List[Dict] = []
+    for roll in rolls:
+        samples_by_rep: Dict[str, List[np.ndarray]] = {}
+        for rep in rep_names:
+            s = hard_map.get((rep, model_name, int(seed), roll))
+            if s is None:
+                continue
+            samples_by_rep[rep] = _state_return_samples(returns, s, k)
+        for i in range(len(rep_names)):
+            for j in range(i + 1, len(rep_names)):
+                a, b = rep_names[i], rep_names[j]
+                if a not in samples_by_rep or b not in samples_by_rep:
+                    continue
+                v = _matched_wasserstein_cost(samples_by_rep[a], samples_by_rep[b])
+                records.append({
+                    "kind": "cross_rep", "rep_a": a, "rep_b": b,
+                    "model": model_name, "K": k, "window": window,
+                    "seed": int(seed), "roll": str(roll), "wasserstein": v,
+                })
+    return records
+
+
 def _compute_semantic_crossrep_wasserstein_from_map(
     hard_map: Dict[Tuple[str, str, int, str], pd.Series],
     returns: pd.Series,
@@ -718,44 +865,49 @@ def _compute_semantic_crossrep_wasserstein_from_map(
     window: int,
     seeds: List[int],
     rolls: List[str],
+    n_jobs: int = -1,
 ) -> List[Dict]:
-    """
-    Cross-representation semantic mismatch within each rolling window.
+    from joblib import Parallel, delayed
+    import time as _time
 
-    For each (model, seed, roll, rep_a, rep_b), we compute per-state return samples and
-    take the minimum average 1D Wasserstein cost after matching states (Hungarian).
-    """
+    tasks = [(m, s) for m in models for s in seeds]
+    effective_jobs = min(n_jobs if n_jobs > 0 else 12, 12, len(tasks))
+    logger.info("Semantic cross-rep: %d tasks, n_jobs=%d", len(tasks), effective_jobs)
+    t0 = _time.perf_counter()
+
+    shards = {(m, s): {key: v for key, v in hard_map.items() if key[1] == m and key[2] == int(s)}
+              for m, s in tasks}
+
+    if effective_jobs <= 1:
+        recs = [r for m, s in tasks for r in _semantic_crossrep_one_seed(m, s, shards[(m, s)], returns, rep_names, k, window, rolls)]
+        logger.info("Semantic cross-rep: done in %.1fs", _time.perf_counter() - t0)
+        return recs
+
+    args = [(m, s, shards[(m, s)], returns, rep_names, k, window, rolls) for m, s in tasks]
+    nested = _parallel_or_sequential(_semantic_crossrep_one_seed, args, effective_jobs, "Semantic cross-rep")
+    return [r for batch in nested for r in batch]
+
+
+def _semantic_temporal_one_unit(
+    rep: str, model_name: str, seed: int,
+    hard_map: Dict[Tuple[str, str, int, str], pd.Series],
+    returns: pd.Series, k: int, window: int, rolls: List[str],
+) -> List[Dict]:
     records: List[Dict] = []
-    for model_name in models:
-        for seed in seeds:
-            for roll in rolls:
-                # Precompute samples for each rep once per (model, seed, roll)
-                samples_by_rep: Dict[str, List[np.ndarray]] = {}
-                for rep in rep_names:
-                    s = hard_map.get((rep, model_name, int(seed), roll))
-                    if s is None:
-                        continue
-                    samples_by_rep[rep] = _state_return_samples(returns, s, k)
-                for i in range(len(rep_names)):
-                    for j in range(i + 1, len(rep_names)):
-                        a = rep_names[i]
-                        b = rep_names[j]
-                        if a not in samples_by_rep or b not in samples_by_rep:
-                            continue
-                        v = _matched_wasserstein_cost(samples_by_rep[a], samples_by_rep[b])
-                        records.append(
-                            {
-                                "kind": "cross_rep",
-                                "rep_a": a,
-                                "rep_b": b,
-                                "model": model_name,
-                                "K": k,
-                                "window": window,
-                                "seed": int(seed),
-                                "roll": str(roll),
-                                "wasserstein": v,
-                            }
-                        )
+    for i in range(len(rolls) - 1):
+        roll_a, roll_b = rolls[i], rolls[i + 1]
+        a = hard_map.get((rep, model_name, int(seed), roll_a))
+        b = hard_map.get((rep, model_name, int(seed), roll_b))
+        if a is None or b is None:
+            continue
+        sa = _state_return_samples(returns, a, k)
+        sb = _state_return_samples(returns, b, k)
+        v = _matched_wasserstein_cost(sa, sb)
+        records.append({
+            "kind": "temporal", "rep": rep, "model": model_name,
+            "K": k, "window": window, "seed": int(seed),
+            "roll_a": str(roll_a), "roll_b": str(roll_b), "wasserstein": v,
+        })
     return records
 
 
@@ -768,41 +920,29 @@ def _compute_semantic_temporal_wasserstein_from_map(
     window: int,
     seeds: List[int],
     rolls: List[str],
+    n_jobs: int = -1,
 ) -> List[Dict]:
-    """
-    Temporal semantic drift between consecutive rolling windows.
+    from joblib import Parallel, delayed
+    import time as _time
 
-    For each (rep, model, seed, roll_a, roll_b), we compute per-state return samples and
-    take the minimum average 1D Wasserstein cost after matching states (Hungarian).
-    """
-    records: List[Dict] = []
-    for rep in rep_names:
-        for model_name in models:
-            for seed in seeds:
-                for i in range(len(rolls) - 1):
-                    roll_a = rolls[i]
-                    roll_b = rolls[i + 1]
-                    a = hard_map.get((rep, model_name, int(seed), roll_a))
-                    b = hard_map.get((rep, model_name, int(seed), roll_b))
-                    if a is None or b is None:
-                        continue
-                    sa = _state_return_samples(returns, a, k)
-                    sb = _state_return_samples(returns, b, k)
-                    v = _matched_wasserstein_cost(sa, sb)
-                    records.append(
-                        {
-                            "kind": "temporal",
-                            "rep": rep,
-                            "model": model_name,
-                            "K": k,
-                            "window": window,
-                            "seed": int(seed),
-                            "roll_a": str(roll_a),
-                            "roll_b": str(roll_b),
-                            "wasserstein": v,
-                        }
-                    )
-    return records
+    tasks = [(rep, m, s) for rep in rep_names for m in models for s in seeds]
+    effective_jobs = min(n_jobs if n_jobs > 0 else 12, 12, len(tasks))
+    logger.info("Semantic temporal: %d tasks, n_jobs=%d", len(tasks), effective_jobs)
+    t0 = _time.perf_counter()
+
+    shards = {(rep, m, s): {key: v for key, v in hard_map.items()
+                            if key[0] == rep and key[1] == m and key[2] == int(s)}
+              for rep, m, s in tasks}
+
+    if effective_jobs <= 1:
+        recs = [r for rep, m, s in tasks for r in _semantic_temporal_one_unit(rep, m, s, shards[(rep, m, s)], returns, k, window, rolls)]
+        logger.info("Semantic temporal: done in %.1fs", _time.perf_counter() - t0)
+        return recs
+
+    args = [(rep, m, s, shards[(rep, m, s)], returns, k, window, rolls) for rep, m, s in tasks]
+    nested = _parallel_or_sequential(_semantic_temporal_one_unit, args, effective_jobs, "Semantic temporal")
+    logger.info("Semantic temporal: done in %.1fs", _time.perf_counter() - t0)
+    return [r for batch in nested for r in batch]
 
 
 def _risk_profile_from_returns(x: np.ndarray, alpha: float = 0.05) -> Dict[str, float]:
@@ -951,6 +1091,104 @@ def _matched_ordering_metrics(
     }
 
 
+def _ordering_null_distribution(
+    returns: pd.Series,
+    states: pd.Series,
+    n_states: int,
+    n_perm: int = 500,
+    seed: int = 42,
+    alpha: float = 0.05,
+) -> Dict[str, float]:
+    """Compute chance-level ordering metrics under random label permutation.
+
+    Randomly permutes the state labels of *states* B times, recomputes the
+    risk profiles, and then compares each permuted profile to the original
+    using ``_matched_ordering_metrics``.  Returns mean top-1 and mean
+    Spearman under the null (plus 95th-percentile for reference).
+    """
+    rng = np.random.default_rng(seed)
+    samples_orig = _state_return_samples(returns, states, n_states)
+    prof_orig = _risk_profiles_by_state(samples_orig, alpha=alpha)
+
+    top1s: List[float] = []
+    spearmans: List[float] = []
+    for _ in range(n_perm):
+        perm = states.copy()
+        perm.iloc[:] = rng.permutation(states.values)
+        samples_p = _state_return_samples(returns, perm, n_states)
+        prof_p = _risk_profiles_by_state(samples_p, alpha=alpha)
+        m = _matched_ordering_metrics(prof_orig, prof_p)
+        if math.isfinite(m["top1_consistency"]):
+            top1s.append(m["top1_consistency"])
+        if math.isfinite(m["spearman"]):
+            spearmans.append(m["spearman"])
+
+    return {
+        "null_top1_mean": float(np.mean(top1s)) if top1s else float("nan"),
+        "null_top1_p95": float(np.percentile(top1s, 95)) if top1s else float("nan"),
+        "null_spearman_mean": float(np.mean(spearmans)) if spearmans else float("nan"),
+        "null_spearman_p95": float(np.percentile(spearmans, 95)) if spearmans else float("nan"),
+        "null_n": len(top1s),
+    }
+
+
+def _ordering_one_seed(
+    model_name: str,
+    seed: int,
+    hard_map: Dict[Tuple[str, str, int, str], pd.Series],
+    returns: pd.Series,
+    rep_names: List[str],
+    k: int,
+    window: int,
+    rolls: List[str],
+    alpha: float,
+) -> Dict:
+    """Compute ordering consistency for one (model, seed) — parallelisable unit."""
+    top_sum = 0.0; top_n = 0
+    sp_sum = 0.0; sp_n = 0
+    sign_sum = 0.0; sign_n = 0
+    mean_abs_sum = 0.0; mean_abs_n = 0
+    dvol_abs_sum = 0.0; dvol_abs_n = 0
+    n_pairs = 0
+    for roll in rolls:
+        prof_by_rep: Dict[str, List[Dict[str, float]]] = {}
+        for rep in rep_names:
+            s = hard_map.get((rep, model_name, int(seed), str(roll)))
+            if s is None:
+                continue
+            samples = _state_return_samples(returns, s, k)
+            prof_by_rep[rep] = _risk_profiles_by_state(samples, alpha=alpha)
+        for i in range(len(rep_names)):
+            for j in range(i + 1, len(rep_names)):
+                a, b = rep_names[i], rep_names[j]
+                if a not in prof_by_rep or b not in prof_by_rep:
+                    continue
+                m = _matched_ordering_metrics(prof_by_rep[a], prof_by_rep[b])
+                n_pairs += 1
+                if math.isfinite(m["top1_consistency"]):
+                    top_sum += m["top1_consistency"]; top_n += 1
+                if math.isfinite(m["spearman"]):
+                    sp_sum += m["spearman"]; sp_n += 1
+                if math.isfinite(m["high_risk_mean_sign_consistency"]):
+                    sign_sum += m["high_risk_mean_sign_consistency"]; sign_n += 1
+                if math.isfinite(m["high_risk_mean_abs_diff"]):
+                    mean_abs_sum += m["high_risk_mean_abs_diff"]; mean_abs_n += 1
+                if math.isfinite(m["high_risk_downside_vol_abs_diff"]):
+                    dvol_abs_sum += m["high_risk_downside_vol_abs_diff"]; dvol_abs_n += 1
+    return {
+        "kind": "cross_rep", "scope": "all_rep_pairs",
+        "model": model_name, "K": int(k), "window": int(window),
+        "seed": int(seed), "alpha": float(alpha),
+        "top1_high_risk_consistency_mean": (top_sum / top_n) if top_n else float("nan"),
+        "spearman_rank_consistency_mean": (sp_sum / sp_n) if sp_n else float("nan"),
+        "high_risk_mean_sign_consistency_mean": (sign_sum / sign_n) if sign_n else float("nan"),
+        "high_risk_mean_abs_diff_mean": (mean_abs_sum / mean_abs_n) if mean_abs_n else float("nan"),
+        "high_risk_downside_vol_abs_diff_mean": (dvol_abs_sum / dvol_abs_n) if dvol_abs_n else float("nan"),
+        "n_pairs": int(n_pairs), "n_top1": int(top_n), "n_spearman": int(sp_n),
+        "n_sign": int(sign_n), "n_mean_abs": int(mean_abs_n), "n_dvol_abs": int(dvol_abs_n),
+    }
+
+
 def _compute_ordering_consistency_crossrep_seed_summary(
     hard_map: Dict[Tuple[str, str, int, str], pd.Series],
     returns: pd.Series,
@@ -961,82 +1199,150 @@ def _compute_ordering_consistency_crossrep_seed_summary(
     seeds: List[int],
     rolls: List[str],
     alpha: float = 0.05,
+    n_jobs: int = -1,
 ) -> List[Dict]:
     """
     Cross-representation ordering consistency (seed-level summaries).
 
     For each (model, seed), average Top-1 high-risk alignment and Spearman rank
     consistency across all rep pairs and rolls (after Hungarian matching).
+    Parallelised over (model, seed) pairs via joblib.
     """
-    records: List[Dict] = []
+    from joblib import Parallel, delayed
+    import time as _time
+
+    tasks = [(m, s) for m in models for s in seeds]
+    effective_jobs = min(n_jobs if n_jobs > 0 else 12, 12, len(tasks))
+
+    # Pre-shard hard_map so each worker only receives its own slice
+    logger.info("Ordering cross-rep: sharding hard_map for %d tasks, n_jobs=%d", len(tasks), effective_jobs)
+    shards = {}
+    for m, s in tasks:
+        shards[(m, s)] = {k: v for k, v in hard_map.items() if k[1] == m and k[2] == int(s)}
+    logger.info("Ordering cross-rep: sharding done; shard sizes: %s",
+                {k: len(v) for k, v in list(shards.items())[:3]})
+
+    if effective_jobs <= 1:
+        logger.info("Ordering cross-rep: running sequentially (effective_jobs=1)")
+        return [_ordering_one_seed(m, s, shards[(m, s)], returns, rep_names, k, window, rolls, alpha)
+                for m, s in tasks]
+
+    args = [(m, s, shards[(m, s)], returns, rep_names, k, window, rolls, alpha) for m, s in tasks]
+    return list(_parallel_or_sequential(_ordering_one_seed, args, effective_jobs, "Ordering cross-rep"))
+
+
+def _compute_ordering_null_baseline(
+    hard_map: Dict[Tuple[str, str, int, str], pd.Series],
+    returns: pd.Series,
+    rep_names: List[str],
+    models: List[str],
+    k: int,
+    seeds: List[int],
+    rolls: List[str],
+    n_perm: int = 500,
+    alpha: float = 0.05,
+) -> Dict[str, float]:
+    """Compute chance-level ordering metrics (Hungarian-matched random permutation).
+
+    Uses the first available (model, seed, roll, rep) combination to estimate
+    the null distribution.  Returns mean and 95th percentile of top-1 agreement
+    and Spearman under random label permutation.
+    """
+    # Find first available state sequence
     for model_name in models:
         for seed in seeds:
-            top_sum = 0.0
-            top_n = 0
-            sp_sum = 0.0
-            sp_n = 0
-            sign_sum = 0.0
-            sign_n = 0
-            mean_abs_sum = 0.0
-            mean_abs_n = 0
-            dvol_abs_sum = 0.0
-            dvol_abs_n = 0
-            n_pairs = 0
             for roll in rolls:
-                samples_by_rep: Dict[str, List[np.ndarray]] = {}
-                prof_by_rep: Dict[str, List[Dict[str, float]]] = {}
                 for rep in rep_names:
                     s = hard_map.get((rep, model_name, int(seed), str(roll)))
-                    if s is None:
-                        continue
-                    samples = _state_return_samples(returns, s, k)
-                    samples_by_rep[rep] = samples
-                    prof_by_rep[rep] = _risk_profiles_by_state(samples, alpha=alpha)
-                for i in range(len(rep_names)):
-                    for j in range(i + 1, len(rep_names)):
-                        a = rep_names[i]
-                        b = rep_names[j]
-                        if a not in prof_by_rep or b not in prof_by_rep:
-                            continue
-                        m = _matched_ordering_metrics(prof_by_rep[a], prof_by_rep[b])
-                        n_pairs += 1
-                        if math.isfinite(m["top1_consistency"]):
-                            top_sum += float(m["top1_consistency"])
-                            top_n += 1
-                        if math.isfinite(m["spearman"]):
-                            sp_sum += float(m["spearman"])
-                            sp_n += 1
-                        if math.isfinite(m["high_risk_mean_sign_consistency"]):
-                            sign_sum += float(m["high_risk_mean_sign_consistency"])
-                            sign_n += 1
-                        if math.isfinite(m["high_risk_mean_abs_diff"]):
-                            mean_abs_sum += float(m["high_risk_mean_abs_diff"])
-                            mean_abs_n += 1
-                        if math.isfinite(m["high_risk_downside_vol_abs_diff"]):
-                            dvol_abs_sum += float(m["high_risk_downside_vol_abs_diff"])
-                            dvol_abs_n += 1
-            records.append(
-                {
-                    "kind": "cross_rep",
-                    "scope": "all_rep_pairs",
-                    "model": model_name,
-                    "K": int(k),
-                    "window": int(window),
-                    "seed": int(seed),
-                    "alpha": float(alpha),
-                    "top1_high_risk_consistency_mean": (top_sum / top_n) if top_n else float("nan"),
-                    "spearman_rank_consistency_mean": (sp_sum / sp_n) if sp_n else float("nan"),
-                    "high_risk_mean_sign_consistency_mean": (sign_sum / sign_n) if sign_n else float("nan"),
-                    "high_risk_mean_abs_diff_mean": (mean_abs_sum / mean_abs_n) if mean_abs_n else float("nan"),
-                    "high_risk_downside_vol_abs_diff_mean": (dvol_abs_sum / dvol_abs_n) if dvol_abs_n else float("nan"),
-                    "n_pairs": int(n_pairs),
-                    "n_top1": int(top_n),
-                    "n_spearman": int(sp_n),
-                    "n_sign": int(sign_n),
-                    "n_mean_abs": int(mean_abs_n),
-                    "n_dvol_abs": int(dvol_abs_n),
-                }
-            )
+                    if s is not None and len(s.dropna()) >= 20:
+                        result = _ordering_null_distribution(
+                            returns, s, k, n_perm=n_perm, seed=42, alpha=alpha,
+                        )
+                        logger.info(
+                            "Ordering null baseline (K=%d): top1_mean=%.3f, spearman_mean=%.3f "
+                            "(n_perm=%d)",
+                            k, result["null_top1_mean"], result["null_spearman_mean"], n_perm,
+                        )
+                        return result
+    return {
+        "null_top1_mean": float("nan"),
+        "null_top1_p95": float("nan"),
+        "null_spearman_mean": float("nan"),
+        "null_spearman_p95": float("nan"),
+        "null_n": 0,
+    }
+
+
+def _temporal_ordering_one_seed(
+    model_name: str,
+    seed: int,
+    hard_map: Dict[Tuple[str, str, int, str], pd.Series],
+    returns: pd.Series,
+    rep_names: List[str],
+    k: int,
+    window: int,
+    rolls: List[str],
+    alpha: float,
+) -> List[Dict]:
+    """Compute temporal ordering consistency for one (model, seed) — parallelisable."""
+    records: List[Dict] = []
+    top_sum_all = 0.0; top_n_all = 0
+    sp_sum_all = 0.0; sp_n_all = 0
+    sign_sum_all = 0.0; sign_n_all = 0
+    mean_abs_sum_all = 0.0; mean_abs_n_all = 0
+    dvol_abs_sum_all = 0.0; dvol_abs_n_all = 0
+    n_pairs_all = 0
+    for rep in rep_names:
+        top_sum = 0.0; top_n = 0; sp_sum = 0.0; sp_n = 0
+        sign_sum = 0.0; sign_n = 0; mean_abs_sum = 0.0; mean_abs_n = 0
+        dvol_abs_sum = 0.0; dvol_abs_n = 0; n_pairs = 0
+        for i in range(len(rolls) - 1):
+            roll_a, roll_b = str(rolls[i]), str(rolls[i + 1])
+            a = hard_map.get((rep, model_name, int(seed), roll_a))
+            b = hard_map.get((rep, model_name, int(seed), roll_b))
+            if a is None or b is None:
+                continue
+            pa = _risk_profiles_by_state(_state_return_samples(returns, a, k), alpha=alpha)
+            pb = _risk_profiles_by_state(_state_return_samples(returns, b, k), alpha=alpha)
+            m = _matched_ordering_metrics(pa, pb)
+            n_pairs += 1; n_pairs_all += 1
+            if math.isfinite(m["top1_consistency"]):
+                top_sum += m["top1_consistency"]; top_n += 1
+                top_sum_all += m["top1_consistency"]; top_n_all += 1
+            if math.isfinite(m["spearman"]):
+                sp_sum += m["spearman"]; sp_n += 1
+                sp_sum_all += m["spearman"]; sp_n_all += 1
+            if math.isfinite(m["high_risk_mean_sign_consistency"]):
+                sign_sum += m["high_risk_mean_sign_consistency"]; sign_n += 1
+                sign_sum_all += m["high_risk_mean_sign_consistency"]; sign_n_all += 1
+            if math.isfinite(m["high_risk_mean_abs_diff"]):
+                mean_abs_sum += m["high_risk_mean_abs_diff"]; mean_abs_n += 1
+                mean_abs_sum_all += m["high_risk_mean_abs_diff"]; mean_abs_n_all += 1
+            if math.isfinite(m["high_risk_downside_vol_abs_diff"]):
+                dvol_abs_sum += m["high_risk_downside_vol_abs_diff"]; dvol_abs_n += 1
+                dvol_abs_sum_all += m["high_risk_downside_vol_abs_diff"]; dvol_abs_n_all += 1
+        records.append({
+            "kind": "temporal", "scope": f"rep={rep}", "model": model_name,
+            "K": int(k), "window": int(window), "seed": int(seed), "alpha": float(alpha),
+            "top1_high_risk_consistency_mean": (top_sum / top_n) if top_n else float("nan"),
+            "spearman_rank_consistency_mean": (sp_sum / sp_n) if sp_n else float("nan"),
+            "high_risk_mean_sign_consistency_mean": (sign_sum / sign_n) if sign_n else float("nan"),
+            "high_risk_mean_abs_diff_mean": (mean_abs_sum / mean_abs_n) if mean_abs_n else float("nan"),
+            "high_risk_downside_vol_abs_diff_mean": (dvol_abs_sum / dvol_abs_n) if dvol_abs_n else float("nan"),
+            "n_pairs": int(n_pairs), "n_top1": int(top_n), "n_spearman": int(sp_n),
+            "n_sign": int(sign_n), "n_mean_abs": int(mean_abs_n), "n_dvol_abs": int(dvol_abs_n),
+        })
+    records.append({
+        "kind": "temporal", "scope": "all_reps", "model": model_name,
+        "K": int(k), "window": int(window), "seed": int(seed), "alpha": float(alpha),
+        "top1_high_risk_consistency_mean": (top_sum_all / top_n_all) if top_n_all else float("nan"),
+        "spearman_rank_consistency_mean": (sp_sum_all / sp_n_all) if sp_n_all else float("nan"),
+        "high_risk_mean_sign_consistency_mean": (sign_sum_all / sign_n_all) if sign_n_all else float("nan"),
+        "high_risk_mean_abs_diff_mean": (mean_abs_sum_all / mean_abs_n_all) if mean_abs_n_all else float("nan"),
+        "high_risk_downside_vol_abs_diff_mean": (dvol_abs_sum_all / dvol_abs_n_all) if dvol_abs_n_all else float("nan"),
+        "n_pairs": int(n_pairs_all), "n_top1": int(top_n_all), "n_spearman": int(sp_n_all),
+        "n_sign": int(sign_n_all), "n_mean_abs": int(mean_abs_n_all), "n_dvol_abs": int(dvol_abs_n_all),
+    })
     return records
 
 
@@ -1050,123 +1356,31 @@ def _compute_ordering_consistency_temporal_seed_summary(
     seeds: List[int],
     rolls: List[str],
     alpha: float = 0.05,
+    n_jobs: int = -1,
 ) -> List[Dict]:
     """
     Temporal ordering consistency (seed-level summaries).
 
     For each (rep, model, seed) and consecutive (roll_a, roll_b), compute ordering
     metrics after Hungarian matching, then average across roll pairs.
-    Also emits an all-reps aggregate per (model, seed).
+    Parallelised over (model, seed) pairs via joblib.
     """
-    records: List[Dict] = []
-    for model_name in models:
-        for seed in seeds:
-            # Aggregate across reps
-            top_sum_all = 0.0
-            top_n_all = 0
-            sp_sum_all = 0.0
-            sp_n_all = 0
-            sign_sum_all = 0.0
-            sign_n_all = 0
-            mean_abs_sum_all = 0.0
-            mean_abs_n_all = 0
-            dvol_abs_sum_all = 0.0
-            dvol_abs_n_all = 0
-            n_pairs_all = 0
-            for rep in rep_names:
-                top_sum = 0.0
-                top_n = 0
-                sp_sum = 0.0
-                sp_n = 0
-                sign_sum = 0.0
-                sign_n = 0
-                mean_abs_sum = 0.0
-                mean_abs_n = 0
-                dvol_abs_sum = 0.0
-                dvol_abs_n = 0
-                n_pairs = 0
-                for i in range(len(rolls) - 1):
-                    roll_a = str(rolls[i])
-                    roll_b = str(rolls[i + 1])
-                    a = hard_map.get((rep, model_name, int(seed), roll_a))
-                    b = hard_map.get((rep, model_name, int(seed), roll_b))
-                    if a is None or b is None:
-                        continue
-                    pa = _risk_profiles_by_state(_state_return_samples(returns, a, k), alpha=alpha)
-                    pb = _risk_profiles_by_state(_state_return_samples(returns, b, k), alpha=alpha)
-                    m = _matched_ordering_metrics(pa, pb)
-                    n_pairs += 1
-                    n_pairs_all += 1
-                    if math.isfinite(m["top1_consistency"]):
-                        top_sum += float(m["top1_consistency"])
-                        top_n += 1
-                        top_sum_all += float(m["top1_consistency"])
-                        top_n_all += 1
-                    if math.isfinite(m["spearman"]):
-                        sp_sum += float(m["spearman"])
-                        sp_n += 1
-                        sp_sum_all += float(m["spearman"])
-                        sp_n_all += 1
-                    if math.isfinite(m["high_risk_mean_sign_consistency"]):
-                        sign_sum += float(m["high_risk_mean_sign_consistency"])
-                        sign_n += 1
-                        sign_sum_all += float(m["high_risk_mean_sign_consistency"])
-                        sign_n_all += 1
-                    if math.isfinite(m["high_risk_mean_abs_diff"]):
-                        mean_abs_sum += float(m["high_risk_mean_abs_diff"])
-                        mean_abs_n += 1
-                        mean_abs_sum_all += float(m["high_risk_mean_abs_diff"])
-                        mean_abs_n_all += 1
-                    if math.isfinite(m["high_risk_downside_vol_abs_diff"]):
-                        dvol_abs_sum += float(m["high_risk_downside_vol_abs_diff"])
-                        dvol_abs_n += 1
-                        dvol_abs_sum_all += float(m["high_risk_downside_vol_abs_diff"])
-                        dvol_abs_n_all += 1
-                records.append(
-                    {
-                        "kind": "temporal",
-                        "scope": f"rep={rep}",
-                        "model": model_name,
-                        "K": int(k),
-                        "window": int(window),
-                        "seed": int(seed),
-                        "alpha": float(alpha),
-                        "top1_high_risk_consistency_mean": (top_sum / top_n) if top_n else float("nan"),
-                        "spearman_rank_consistency_mean": (sp_sum / sp_n) if sp_n else float("nan"),
-                        "high_risk_mean_sign_consistency_mean": (sign_sum / sign_n) if sign_n else float("nan"),
-                        "high_risk_mean_abs_diff_mean": (mean_abs_sum / mean_abs_n) if mean_abs_n else float("nan"),
-                        "high_risk_downside_vol_abs_diff_mean": (dvol_abs_sum / dvol_abs_n) if dvol_abs_n else float("nan"),
-                        "n_pairs": int(n_pairs),
-                        "n_top1": int(top_n),
-                        "n_spearman": int(sp_n),
-                        "n_sign": int(sign_n),
-                        "n_mean_abs": int(mean_abs_n),
-                        "n_dvol_abs": int(dvol_abs_n),
-                    }
-                )
-            records.append(
-                {
-                    "kind": "temporal",
-                    "scope": "all_reps",
-                    "model": model_name,
-                    "K": int(k),
-                    "window": int(window),
-                    "seed": int(seed),
-                    "alpha": float(alpha),
-                    "top1_high_risk_consistency_mean": (top_sum_all / top_n_all) if top_n_all else float("nan"),
-                    "spearman_rank_consistency_mean": (sp_sum_all / sp_n_all) if sp_n_all else float("nan"),
-                    "high_risk_mean_sign_consistency_mean": (sign_sum_all / sign_n_all) if sign_n_all else float("nan"),
-                    "high_risk_mean_abs_diff_mean": (mean_abs_sum_all / mean_abs_n_all) if mean_abs_n_all else float("nan"),
-                    "high_risk_downside_vol_abs_diff_mean": (dvol_abs_sum_all / dvol_abs_n_all) if dvol_abs_n_all else float("nan"),
-                    "n_pairs": int(n_pairs_all),
-                    "n_top1": int(top_n_all),
-                    "n_spearman": int(sp_n_all),
-                    "n_sign": int(sign_n_all),
-                    "n_mean_abs": int(mean_abs_n_all),
-                    "n_dvol_abs": int(dvol_abs_n_all),
-                }
-            )
-    return records
+    from joblib import Parallel, delayed
+
+    tasks = [(m, s) for m in models for s in seeds]
+    effective_jobs = min(n_jobs if n_jobs > 0 else 12, 12, len(tasks))
+
+    shards = {}
+    for m, s in tasks:
+        shards[(m, s)] = {k: v for k, v in hard_map.items() if k[1] == m and k[2] == int(s)}
+
+    if effective_jobs <= 1:
+        return [rec for m, s in tasks
+                for rec in _temporal_ordering_one_seed(m, s, shards[(m, s)], returns, rep_names, k, window, rolls, alpha)]
+
+    args = [(m, s, shards[(m, s)], returns, rep_names, k, window, rolls, alpha) for m, s in tasks]
+    nested = _parallel_or_sequential(_temporal_ordering_one_seed, args, effective_jobs, "Ordering temporal")
+    return [rec for batch in nested for rec in batch]
 
 
 def _mean_or_nan(x: pd.Series) -> float:
@@ -1181,6 +1395,7 @@ def _write_key_outputs(
     stability: pd.DataFrame,
     semantic: pd.DataFrame,
     ordering: pd.DataFrame,
+    fit_quality: pd.DataFrame,
     out_base: Path,
 ) -> None:
     rows: List[Dict] = []
@@ -1260,6 +1475,11 @@ def _write_key_outputs(
     if {"roll_a", "roll_b", "ari"}.issubset(stability.columns):
         tmp = stability.dropna(subset=["ari", "roll_a", "roll_b"]).copy()
         if not tmp.empty:
+            eval_mode = (
+                str(tmp["temporal_eval_mode"].mode().iloc[0])
+                if "temporal_eval_mode" in tmp.columns and not tmp["temporal_eval_mode"].dropna().empty
+                else "overlap"
+            )
             rows.append(
                 {
                     "metric": "temporal_ari_mean",
@@ -1268,6 +1488,23 @@ def _write_key_outputs(
                     "n": int(len(tmp)),
                 }
             )
+            rows.append(
+                {
+                    "metric": "temporal_eval_mode",
+                    "scope": "all",
+                    "value": eval_mode,
+                    "n": int(len(tmp)),
+                }
+            )
+            if "overlap_ratio" in tmp.columns:
+                rows.append(
+                    {
+                        "metric": "temporal_overlap_ratio_mean",
+                        "scope": "all",
+                        "value": _mean_or_nan(pd.to_numeric(tmp["overlap_ratio"], errors="coerce")),
+                        "n": int(len(tmp)),
+                    }
+                )
             for metric_col in ("ami", "vi"):
                 if metric_col in tmp.columns:
                     rows.append(
@@ -1275,6 +1512,18 @@ def _write_key_outputs(
                             "metric": f"temporal_{metric_col}_mean",
                             "scope": "all",
                             "value": _mean_or_nan(tmp[metric_col]),
+                            "n": int(len(tmp)),
+                        }
+                    )
+            # Keep overlap-only diagnostics to make temporal inflation auditable.
+            for metric_col in ("ari", "ami", "vi"):
+                col = f"{metric_col}_overlap"
+                if col in tmp.columns:
+                    rows.append(
+                        {
+                            "metric": f"temporal_overlap_{metric_col}_mean",
+                            "scope": "all",
+                            "value": _mean_or_nan(pd.to_numeric(tmp[col], errors="coerce")),
                             "n": int(len(tmp)),
                         }
                     )
@@ -1298,6 +1547,51 @@ def _write_key_outputs(
                                     "n": int(len(g)),
                                 }
                             )
+                    if "overlap_ratio" in g.columns:
+                        rows.append(
+                            {
+                                "metric": "temporal_overlap_ratio_mean",
+                                "scope": f"model={model_name}",
+                                "value": _mean_or_nan(pd.to_numeric(g["overlap_ratio"], errors="coerce")),
+                                "n": int(len(g)),
+                            }
+                        )
+
+    # Seed-level CIs (emitted when ≥3 seeds so paper_autofill can report mean ± CI)
+    if "seed" in stability.columns and stability["seed"].nunique() >= 3:
+        from scipy import stats as _sp_stats
+
+        def _seed_ci(series: pd.Series) -> tuple[float, float]:
+            """Return (mean, 95% CI half-width) across seed-level means."""
+            arr = series.dropna().values.astype(float)
+            if len(arr) < 2:
+                return float(np.nanmean(arr)), float("nan")
+            sem = float(_sp_stats.sem(arr))
+            hw = sem * float(_sp_stats.t.ppf(0.975, len(arr) - 1))
+            return float(np.mean(arr)), hw
+
+        # Cross-rep seed CIs
+        if {"rep_a", "rep_b", "ari"}.issubset(stability.columns):
+            cross_df = stability.dropna(subset=["rep_a", "rep_b", "ari"]).copy()
+            cross_df = cross_df[cross_df["rep_a"] != cross_df["rep_b"]]
+            if not cross_df.empty and "model" in cross_df.columns:
+                for model_name, g in cross_df.groupby("model"):
+                    seed_means = g.groupby("seed")["ari"].mean()
+                    if len(seed_means) >= 3:
+                        mu, ci = _seed_ci(seed_means)
+                        rows.append({"metric": "cross_rep_ari_seed_mean", "scope": f"model={model_name}", "value": mu, "n": int(len(seed_means))})
+                        rows.append({"metric": "cross_rep_ari_seed_ci95", "scope": f"model={model_name}", "value": ci, "n": int(len(seed_means))})
+
+        # Temporal seed CIs
+        if {"roll_a", "roll_b", "ari"}.issubset(stability.columns):
+            tmp = stability.dropna(subset=["ari", "roll_a", "roll_b"]).copy()
+            if not tmp.empty and "model" in tmp.columns:
+                for model_name, g in tmp.groupby("model"):
+                    seed_means = g.groupby("seed")["ari"].mean()
+                    if len(seed_means) >= 3:
+                        mu, ci = _seed_ci(seed_means)
+                        rows.append({"metric": "temporal_ari_seed_mean", "scope": f"model={model_name}", "value": mu, "n": int(len(seed_means))})
+                        rows.append({"metric": "temporal_ari_seed_ci95", "scope": f"model={model_name}", "value": ci, "n": int(len(seed_means))})
 
     # Semantic consistency (return-distribution profiles; 1D Wasserstein + matching)
     if not semantic.empty and "wasserstein" in semantic.columns and "kind" in semantic.columns:
@@ -1496,6 +1790,65 @@ def _write_key_outputs(
             "n": 0,
         }
     )
+    if not scores.empty and {"model", "hmm_diag_fallback"}.issubset(scores.columns):
+        hmm_scores = scores[scores["model"].astype(str) == "hmm"].copy()
+        if not hmm_scores.empty:
+            fb = pd.to_numeric(hmm_scores["hmm_diag_fallback"], errors="coerce").dropna()
+            if not fb.empty:
+                rows.append(
+                    {
+                        "metric": "hmm_diag_fallback_rate",
+                        "scope": "all",
+                        "value": float(fb.mean()),
+                        "n": int(len(fb)),
+                    }
+                )
+    if not fit_quality.empty and {"expected", "success", "failed"}.issubset(fit_quality.columns):
+        fq = fit_quality.copy()
+        expected_all = float(pd.to_numeric(fq["expected"], errors="coerce").sum())
+        success_all = float(pd.to_numeric(fq["success"], errors="coerce").sum())
+        failed_all = float(pd.to_numeric(fq["failed"], errors="coerce").sum())
+        if expected_all > 0:
+            rows.append(
+                {
+                    "metric": "fit_success_rate",
+                    "scope": "all",
+                    "value": success_all / expected_all,
+                    "n": int(expected_all),
+                }
+            )
+            rows.append(
+                {
+                    "metric": "fit_failure_rate",
+                    "scope": "all",
+                    "value": failed_all / expected_all,
+                    "n": int(expected_all),
+                }
+            )
+        if "model" in fq.columns:
+            fq_model = fq[fq["model"].astype(str) != "all"]
+            for model_name, g in fq_model.groupby("model"):
+                expected_m = float(pd.to_numeric(g["expected"], errors="coerce").sum())
+                success_m = float(pd.to_numeric(g["success"], errors="coerce").sum())
+                failed_m = float(pd.to_numeric(g["failed"], errors="coerce").sum())
+                if expected_m <= 0:
+                    continue
+                rows.append(
+                    {
+                        "metric": "fit_success_rate",
+                        "scope": f"model={model_name}",
+                        "value": success_m / expected_m,
+                        "n": int(expected_m),
+                    }
+                )
+                rows.append(
+                    {
+                        "metric": "fit_failure_rate",
+                        "scope": f"model={model_name}",
+                        "value": failed_m / expected_m,
+                        "n": int(expected_m),
+                    }
+                )
 
     out_base.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(rows).to_csv(out_base / "key_results.csv", index=False)
@@ -1719,6 +2072,7 @@ def _run_single_asset(
     hard_map: Dict[Tuple[str, str, int, str], pd.Series] = {}
 
     score_rows: List[Dict] = []
+    fit_quality_rows: List[Dict] = []
 
     for rep in reps:
         t_rep0 = time.perf_counter()
@@ -1747,6 +2101,10 @@ def _run_single_asset(
                     tasks.append(
                         (model_name, int(seed), int(s), int(e), _window_roll_name(roll_idx))
                     )
+        expected_by_model: Dict[str, int] = {str(m): 0 for m in models}
+        for model_name, *_ in tasks:
+            expected_by_model[str(model_name)] = int(expected_by_model.get(str(model_name), 0) + 1)
+        success_by_model: Dict[str, int] = {str(m): 0 for m in models}
 
         parallel_backend = str(grid.get("parallel_backend", "loky"))
         if n_jobs == 1:
@@ -1832,7 +2190,9 @@ def _run_single_asset(
                         [pd.read_csv(p) for p in parts_scores], axis=0, ignore_index=True
                     )
                     sc.to_csv(rep_dir / f"windows_scores_{m}.csv", index=False)
-                    score_rows.extend(sc.to_dict(orient="records"))
+                    sc_rows = sc.to_dict(orient="records")
+                    score_rows.extend(sc_rows)
+                    success_by_model[str(m)] = int(len(sc_rows))
 
                 parts_params = sorted([p for p in shard_dir.glob(f"model_params_{m}_*.jsonl")])
                 if parts_params:
@@ -1862,6 +2222,7 @@ def _run_single_asset(
             model_name = str(r["model"])
             seed = int(r["seed"])
             roll = str(r["roll"])
+            success_by_model[model_name] = int(success_by_model.get(model_name, 0) + 1)
 
             hard: pd.Series = r["hard"]
             soft: pd.DataFrame = r["soft"]
@@ -1980,6 +2341,29 @@ def _run_single_asset(
             fail,
             time.perf_counter() - t_rep0,
         )
+        fit_quality_rows.append(
+            {
+                "rep": rep.name,
+                "model": "all",
+                "expected": int(len(tasks)),
+                "success": int(ok),
+                "failed": int(fail),
+                "success_rate": (float(ok) / float(len(tasks))) if len(tasks) > 0 else float("nan"),
+            }
+        )
+        for model_name in sorted(expected_by_model.keys()):
+            exp_m = int(expected_by_model.get(model_name, 0))
+            ok_m = int(success_by_model.get(model_name, 0))
+            fit_quality_rows.append(
+                {
+                    "rep": rep.name,
+                    "model": str(model_name),
+                    "expected": exp_m,
+                    "success": ok_m,
+                    "failed": int(max(0, exp_m - ok_m)),
+                    "success_rate": (float(ok_m) / float(exp_m)) if exp_m > 0 else float("nan"),
+                }
+            )
 
     # In process mode (loky), we avoid returning large pandas objects from workers,
     # so `hard_map` may be empty here. Reconstruct it from merged CSVs.
@@ -2003,6 +2387,7 @@ def _run_single_asset(
         window=w,
         seeds=seeds,
         rolls=rolls,
+        n_jobs=n_jobs,
     )
     window_stability = _compute_window_stability_from_map(
         hard_map=hard_map,
@@ -2012,6 +2397,7 @@ def _run_single_asset(
         window=w,
         seeds=seeds,
         rolls=rolls,
+        n_jobs=n_jobs,
     )
     if rep_stability:
         save_json(results_dir / "rep_stability.json", {"rep_stability": rep_stability})
@@ -2029,6 +2415,7 @@ def _run_single_asset(
         window=w,
         seeds=seeds,
         rolls=rolls,
+        n_jobs=n_jobs,
     )
     semantic_temporal = _compute_semantic_temporal_wasserstein_from_map(
         hard_map=hard_map,
@@ -2039,6 +2426,7 @@ def _run_single_asset(
         window=w,
         seeds=seeds,
         rolls=rolls,
+        n_jobs=n_jobs,
     )
     semantic = pd.DataFrame(semantic_cross + semantic_temporal)
 
@@ -2066,16 +2454,39 @@ def _run_single_asset(
         alpha=0.05,
     )
     ordering = pd.DataFrame(ordering_cross + ordering_temporal)
+
+    # Chance-level baseline for ordering metrics (random permutation null).
+    ordering_null = _compute_ordering_null_baseline(
+        hard_map=hard_map,
+        returns=returns,
+        rep_names=rep_names,
+        models=models,
+        k=k,
+        seeds=seeds,
+        rolls=rolls,
+        n_perm=500,
+        alpha=0.05,
+    )
+
+    fit_quality = pd.DataFrame(fit_quality_rows)
     scores.to_csv(plots_dir / "scores_summary.csv", index=False)
     stability.to_csv(plots_dir / "stability_summary.csv", index=False)
     if not semantic.empty:
         semantic.to_csv(plots_dir / "semantic_summary.csv", index=False)
     if not ordering.empty:
         ordering.to_csv(plots_dir / "ordering_consistency_seed_summary.csv", index=False)
+    # Save null baseline
+    if ordering_null.get("null_n", 0) > 0:
+        import json as _json
+        (plots_dir / "ordering_null_baseline.json").write_text(
+            _json.dumps(ordering_null, indent=2)
+        )
         try:
             plot_ordering_consistency_summary(ordering, plots_dir / "ordering_consistency.png")
         except Exception as e:
             logger.warning("[%s] Could not plot ordering consistency: %s", ctx, e)
+    if not fit_quality.empty:
+        fit_quality.to_csv(plots_dir / "fit_quality_summary.csv", index=False)
     logger.info(
         "[%s] Aggregated summaries; scores_rows=%d stability_rows=%d",
         ctx,
@@ -2090,7 +2501,7 @@ def _run_single_asset(
         logger.info("[%s] Plots written (%d): %s", ctx, len(pngs), ", ".join(pngs))
     else:
         logger.warning("[%s] No PNG plots found in %s after plotting step", ctx, plots_dir)
-    _write_key_outputs(scores, stability, semantic, ordering, out_dir)
+    _write_key_outputs(scores, stability, semantic, ordering, fit_quality, out_dir)
 
     elapsed_s = float(time.perf_counter() - t_asset0)
     logger.info("Run finished; asset=%s elapsed_s=%.1f (%s)", asset, elapsed_s, _fmt_hms(elapsed_s))
@@ -2109,8 +2520,8 @@ def _extract_metrics_from_key_results(p: Path) -> dict | None:
         return None
     return {
         "cross_rep_ari_mean": float(cross["value"].iloc[0]),
-        # Temporal ARI can be undefined at step=W (no overlap): the intersection
-        # between consecutive windows is empty, so no temporal_ari_mean row is written.
+        # Temporal ARI can still be missing if an upstream run did not emit
+        # temporal rows (e.g., partial/incomplete outputs).
         "temporal_ari_mean": (
             pd.to_numeric(temp["value"].iloc[0], errors="coerce")
             if not temp.empty
@@ -2181,10 +2592,33 @@ def run(config_path: Path) -> None:
             outputs_dir,
             Path(config_path),
         )
+        data_cfg = cfg.get("data", {}) if isinstance(cfg.get("data", {}), dict) else {}
+        download_start = str(data_cfg.get("start_date", "2005-01-01"))
+        download_end = data_cfg.get("end_date", None)
+        if download_end is not None:
+            download_end = str(download_end)
         missing = [a for a in assets if not (raw_dir / f"{safe_name(a)}.csv").exists()]
         if missing:
             print(f"[runner] Downloading missing tickers to {raw_dir}: {missing}")
-            download_tickers(missing, output_dir=raw_dir)
+            download_tickers(
+                missing,
+                output_dir=raw_dir,
+                start_date=download_start,
+                end_date=download_end,
+            )
+        manifest = {
+            "assets": assets,
+            "raw_dir": str(raw_dir),
+            "outputs_dir": str(outputs_dir),
+            "config_path": str(Path(config_path)),
+            "download_start_date": download_start,
+            "download_end_date": (download_end if download_end is not None else "today_utc"),
+            "downloaded_missing_assets": missing,
+        }
+        (outputs_dir / "run_manifest.json").write_text(
+            json.dumps(manifest, indent=2),
+            encoding="utf-8",
+        )
 
         ran_any = False
 
@@ -2224,11 +2658,24 @@ def run(config_path: Path) -> None:
 
         # Update the paper Results numbers from outputs (auto-filled blocks).
         try:
+            # Ensure post-hoc AMI/VI and permutation p-values are available in key_results.
+            try:
+                from posthoc_ami_vi_perm import main as posthoc_ami_vi_perm_main
+
+                posthoc_ami_vi_perm_main(cfg=cfg)
+                logger.info("Post-hoc AMI/VI/permutation metrics updated.")
+            except Exception as e:
+                logger.warning("Could not run post-hoc AMI/VI/permutation metrics: %s", e)
+
             project_dir = Path(__file__).resolve().parents[1]
             md_path = project_dir / "paper" / "sections" / "04_empirical_results.md"
             if md_path.exists():
                 update_empirical_results_md(outputs_dir=outputs_dir, md_path=md_path, cfg=cfg)
                 logger.info("Auto-filled Results numbers in %s", md_path)
+            tex_path = project_dir / "paper" / "main.tex"
+            if tex_path.exists():
+                update_main_tex_tables(outputs_dir=outputs_dir, tex_path=tex_path, cfg=cfg)
+                logger.info("Synchronized numeric table rows in %s", tex_path)
         except Exception as e:
             logger.warning("Could not auto-fill paper Results numbers: %s", e)
 

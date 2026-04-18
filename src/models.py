@@ -83,9 +83,11 @@ def fit_hmm(
             model.fit(X_clean.values)
         return model
 
+    requested_covariance_type = str(covariance_type)
+    hmm_diag_fallback = False
     model = GaussianHMM(
         n_components=n_states,
-        covariance_type=covariance_type,
+        covariance_type=requested_covariance_type,
         n_iter=n_iter,
         min_covar=min_covar,
         random_state=random_state,
@@ -93,6 +95,7 @@ def fit_hmm(
     try:
         model = _fit(model)
     except ValueError:
+        hmm_diag_fallback = True
         model = _fit(
             GaussianHMM(
                 n_components=n_states,
@@ -108,6 +111,7 @@ def fit_hmm(
         hard = model.predict(X_clean.values)
         soft = model.predict_proba(X_clean.values)
     except ValueError:
+        hmm_diag_fallback = True
         model = _fit(
             GaussianHMM(
                 n_components=n_states,
@@ -134,8 +138,15 @@ def fit_hmm(
         "covars": model.covars_.tolist(),
         "covariance_type": model.covariance_type,
         "n_components": model.n_components,
+        "requested_covariance_type": requested_covariance_type,
+        "hmm_diag_fallback": bool(hmm_diag_fallback),
     }
-    scores = {"loglik": loglik, "aic": float(aic), "bic": float(bic)}
+    scores = {
+        "loglik": loglik,
+        "aic": float(aic),
+        "bic": float(bic),
+        "hmm_diag_fallback": float(1.0 if hmm_diag_fallback else 0.0),
+    }
     return ModelResult(hard_series, soft_df, model_params, scores)
 
 

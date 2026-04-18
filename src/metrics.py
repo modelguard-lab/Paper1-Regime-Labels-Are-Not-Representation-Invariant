@@ -89,6 +89,46 @@ def stability_metrics(labels_a: pd.Series, labels_b: pd.Series, n_states: int) -
     )
 
 
+def temporal_disjoint_metrics(labels_a: pd.Series, labels_b: pd.Series) -> StabilityScores:
+    """
+    Compute temporal stability on the non-overlapping parts of two windows.
+
+    Rationale:
+    - Intersection-based temporal metrics can be inflated when rolling windows overlap.
+    - We therefore compare labels on disjoint segments only (a\\b vs b\\a), paired by
+      time order after sorting each segment. This is a transition-consistency proxy.
+    """
+    if not isinstance(labels_a, pd.Series):
+        labels_a = pd.Series(labels_a)
+    if not isinstance(labels_b, pd.Series):
+        labels_b = pd.Series(labels_b)
+
+    a = labels_a.dropna().sort_index()
+    b = labels_b.dropna().sort_index()
+    if a.empty or b.empty:
+        return StabilityScores(ari=float("nan"), nmi=float("nan"), ami=float("nan"), vi=float("nan"))
+
+    idx_a_only = a.index.difference(b.index)
+    idx_b_only = b.index.difference(a.index)
+    if len(idx_a_only) == 0 or len(idx_b_only) == 0:
+        return StabilityScores(ari=float("nan"), nmi=float("nan"), ami=float("nan"), vi=float("nan"))
+
+    a_only = a.loc[idx_a_only].astype(int).to_numpy()
+    b_only = b.loc[idx_b_only].astype(int).to_numpy()
+    n = int(min(len(a_only), len(b_only)))
+    if n < 2:
+        return StabilityScores(ari=float("nan"), nmi=float("nan"), ami=float("nan"), vi=float("nan"))
+
+    a_only = a_only[:n]
+    b_only = b_only[:n]
+    return StabilityScores(
+        ari=float(adjusted_rand_score(a_only, b_only)),
+        nmi=float(normalized_mutual_info_score(a_only, b_only)),
+        ami=float(adjusted_mutual_info_score(a_only, b_only)),
+        vi=float(variation_of_information(a_only, b_only)),
+    )
+
+
 def semantic_drift(features: pd.DataFrame, states: pd.Series, feature_cols: Iterable[str]) -> pd.Series:
     """
     Measure within-window semantic drift of state risk profiles.

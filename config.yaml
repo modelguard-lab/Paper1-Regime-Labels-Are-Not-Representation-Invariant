@@ -1,5 +1,8 @@
 raw_dir: data
 outputs_dir: outputs
+data:
+  start_date: "2005-01-01"
+  end_date: "2026-02-28"
 
 assets: ["IEF", "^GSPC", "GLD", "BTC-USD"]
 
@@ -69,6 +72,19 @@ representations:
       mode: "rolling_zscore"
       window: 120
 
+  # Heterogeneous representation: GARCH(1,1) conditional vol replaces rolling
+  # realised vol, providing a genuinely different volatility estimator (parametric
+  # autoregressive filter vs equal-weighted rolling window).
+  rep_d:
+    features: ["garch_vol", "drawdown", "var", "cvar"]
+    windows:
+      drawdown_window: 60
+      tail_window: 60
+      tail_alpha: 0.05
+    standardization:
+      mode: "rolling_zscore"
+      window: 120
+
 models:
   hmm:
     enabled: true
@@ -88,8 +104,9 @@ grid:
   step: 21
   # Step sweep for overlap sensitivity (P0 figure/table in Section 5.5)
   step_sweep: [21, 63, 126, 252]
-  # Keep 2 seeds to control runtime under monthly rolling
-  seeds: [1, 2]
+  # 20 seeds: ensures seed-level CIs appear directly in the baseline table,
+  # avoiding the "precision illusion" of reporting 3-decimal means from 2 seeds.
+  seeds: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
   # Robustness sweep: distribution over random initializations and K.
   # This uses "seeds as independent repeats" (not pair counts).
   robustness:
@@ -99,7 +116,7 @@ grid:
     seeds: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
     step: 21
   # Tune based on your machine; too high may cause overload/BSOD on some systems
-  n_jobs: 12
+  n_jobs: 18
 
 # Optional Appendix artifact: one-page synthetic sanity check (disabled by default).
 synthetic_sanity:

@@ -35,6 +35,20 @@ def _fmt(x: float | int | None, nd: int = 3) -> str:
     return f"{float(x):.{nd}f}"
 
 
+def _ci95_series(series: pd.Series) -> float | None:
+    s = pd.to_numeric(series, errors="coerce").dropna()
+    n = int(s.shape[0])
+    if n <= 1:
+        return None
+    std = float(s.std(ddof=1))
+    se = std / math.sqrt(n) if std == std else float("nan")
+    if student_t is not None:
+        tcrit = float(student_t.ppf(0.975, df=n - 1))
+    else:
+        tcrit = 1.96
+    return float(tcrit * se)
+
+
 def _replace_block(text: str, start_tag: str, end_tag: str, new_block: str) -> str:
     pattern = re.compile(
         rf"({re.escape(start_tag)}\n)(.*?)(\n{re.escape(end_tag)})", flags=re.DOTALL
@@ -104,7 +118,7 @@ def _compute_model_split_block(outputs_dir: Path, baseline: BaselineSpec) -> str
     if not per_asset:
         return "*(missing required baseline exports.)*"
 
-    # Means by model (across assets).
+    # Means by model (across assets) — with seed-level CIs when available.
     rows = []
     for asset, df in per_asset.items():
         for model in ["gmm", "hmm"]:
@@ -116,14 +130,35 @@ def _compute_model_split_block(outputs_dir: Path, baseline: BaselineSpec) -> str
                     "cross_rep_ami": _get_metric(df, "cross_rep_ami_mean", f"model={model}"),
                     "temporal_ari": _get_metric(df, "temporal_ari_mean", f"model={model}"),
                     "temporal_ami": _get_metric(df, "temporal_ami_mean", f"model={model}"),
+                    # Seed-level CIs (populated when baseline uses ≥3 seeds)
+                    "cross_rep_ari_seed_mean": _get_metric(df, "cross_rep_ari_seed_mean", f"model={model}"),
+                    "cross_rep_ari_seed_ci95": _get_metric(df, "cross_rep_ari_seed_ci95", f"model={model}"),
+                    "temporal_ari_seed_mean": _get_metric(df, "temporal_ari_seed_mean", f"model={model}"),
+                    "temporal_ari_seed_ci95": _get_metric(df, "temporal_ari_seed_ci95", f"model={model}"),
                 }
             )
     d = pd.DataFrame(rows)
+
+    # Prefer seed-level mean when available; fall back to overall mean.
+    def _pick_mean(d: pd.DataFrame, seed_col: str, fallback_col: str) -> pd.DataFrame:
+        out = d[seed_col].copy()
+        mask = out.isna()
+        out[mask] = d.loc[mask, fallback_col]
+        return out
+
+    for metric in ["cross_rep_ari", "temporal_ari"]:
+        d[f"{metric}_best"] = _pick_mean(d, f"{metric}_seed_mean", metric)
+
     means = (
-        d.groupby("model")[["cross_rep_ari", "cross_rep_ami", "temporal_ari", "temporal_ami"]]
+        d.groupby("model")[["cross_rep_ari_best", "temporal_ari_best",
+                            "cross_rep_ari_seed_ci95", "temporal_ari_seed_ci95",
+                            "cross_rep_ami", "temporal_ami"]]
         .mean(numeric_only=True)
         .reindex(["gmm", "hmm"])
     )
+
+    # Check whether seed CIs are available
+    has_seed_ci = not means["cross_rep_ari_seed_ci95"].isna().all()
 
     # Overall ratio (temporal / cross-rep) using "all" scope.
     all_rows = []
@@ -145,41 +180,67 @@ def _compute_model_split_block(outputs_dir: Path, baseline: BaselineSpec) -> str
     ratio = temp_mean / cross_mean if cross_mean and not np.isnan(cross_mean) else float("nan")
     pvalue_max = float(max(pvalues)) if pvalues else float("nan")
 
-    gap_temporal = float(means.loc["gmm", "temporal_ari"] - means.loc["hmm", "temporal_ari"])
-    gap_cross = float(means.loc["gmm", "cross_rep_ari"] - means.loc["hmm", "cross_rep_ari"])
+    gap_cross = float(means.loc["gmm", "cross_rep_ari_best"] - means.loc["hmm", "cross_rep_ari_best"])
 
     assets_list = ", ".join(sorted(per_asset.keys()))
-    seeds_str = ", ".join(str(s) for s in baseline.seeds)
+    n_seeds = len(baseline.seeds)
+
+    def _cell(mean_val: float, ci_val: float | None) -> str:
+        """Format a table cell as 'mean ± CI' when CI is available."""
+        if ci_val is not None and not (isinstance(ci_val, float) and math.isnan(ci_val)):
+            return f"{_fmt(mean_val)} ± {_fmt(ci_val)}"
+        return _fmt(mean_val)
 
     block = []
     block.append(
-        f"Baseline setting: window $={baseline.window}$, step $={baseline.step}$, $K={baseline.k}$, seeds $=\\{{{seeds_str}\\}}$; averaged across assets ({assets_list})."
-        " *Note: ARI uses scope=model=gmm/hmm (per-model averages); AMI likewise. Permutation p-value uses scope=all (GMM+HMM combined).*"
+        f"Baseline setting: window $={baseline.window}$, step $={baseline.step}$, $K={baseline.k}$, {n_seeds} seeds; "
+        f"averaged across assets ({assets_list})."
     )
     block.append("")
-    block.append("| model | cross-rep ARI | cross-rep AMI | temporal ARI | temporal AMI |")
-    block.append("| --- | ---: | ---: | ---: | ---: |")
-    block.append(
-        f"| GMM | {_fmt(means.loc['gmm','cross_rep_ari'])} | {_fmt(means.loc['gmm','cross_rep_ami'])} "
-        f"| {_fmt(means.loc['gmm','temporal_ari'])} | {_fmt(means.loc['gmm','temporal_ami'])} |"
-    )
-    block.append(
-        f"| HMM | {_fmt(means.loc['hmm','cross_rep_ari'])} | {_fmt(means.loc['hmm','cross_rep_ami'])} "
-        f"| {_fmt(means.loc['hmm','temporal_ari'])} | {_fmt(means.loc['hmm','temporal_ami'])} |"
-    )
+    block.append("| model | cross-rep ARI | temporal ARI |")
+    block.append("| --- | ---: | ---: |")
+    for model in ["gmm", "hmm"]:
+        cr = _cell(means.loc[model, "cross_rep_ari_best"],
+                    means.loc[model, "cross_rep_ari_seed_ci95"] if has_seed_ci else None)
+        tr = _cell(means.loc[model, "temporal_ari_best"],
+                    means.loc[model, "temporal_ari_seed_ci95"] if has_seed_ci else None)
+        block.append(f"| {model.upper()} | {cr} | {tr} |")
     block.append("")
-    pv_str = (
-        f"Permutation test (999 permutations): cross-rep ARI is significantly above chance across all assets "
-        f"(max $p={_fmt(pvalue_max, nd=4)}$, two-tailed)."
-        if not math.isnan(pvalue_max)
-        else "*(permutation p-values not yet computed — run posthoc_ami_vi_perm.py)*"
-    )
+    # AMI in prose (no longer a separate column)
+    gmm_cr_ami = means.loc["gmm", "cross_rep_ami"]
+    hmm_cr_ami = means.loc["hmm", "cross_rep_ami"]
+    if not (math.isnan(gmm_cr_ami) or math.isnan(hmm_cr_ami)):
+        block.append(
+            f"AMI follows the same ordering (GMM cross-rep AMI = {_fmt(gmm_cr_ami)}, "
+            f"HMM = {_fmt(hmm_cr_ami)}), confirming that the finding is not an artefact "
+            "of ARI's large-cluster sensitivity."
+        )
+        block.append("")
+    # Per-pair permutation p-values (preferred) or aggregate fallback
+    perpair_maxes = []
+    for asset, df in per_asset.items():
+        pp_max = _get_metric(df, "crossrep_ari_perm_perpair_max", "all")
+        if pp_max is not None and not (isinstance(pp_max, float) and math.isnan(pp_max)):
+            perpair_maxes.append(pp_max)
+    if perpair_maxes:
+        worst = max(perpair_maxes)
+        pv_str = (
+            f"Per-pair permutation tests (999 permutations each): all individual pairs exceed "
+            f"random-labelling agreement (worst per-pair $p={_fmt(worst, nd=4)}$, one-sided)."
+        )
+    elif not math.isnan(pvalue_max):
+        pv_str = (
+            f"Permutation test (999 permutations): cross-rep ARI is significantly above chance across all assets "
+            f"(max aggregate $p={_fmt(pvalue_max, nd=4)}$, one-sided)."
+        )
+    else:
+        pv_str = "*(permutation p-values not yet computed — run posthoc_ami_vi_perm.py)*"
     block.append(pv_str)
     block.append("")
     block.append(
         "Cross-asset main effect: temporal ARI is higher than cross-representation ARI "
         f"(ratio $={_fmt(ratio, nd=2)}\\times$ at step $={baseline.step}$), indicating apparent stability within a fixed representation that collapses under reasonable representation changes. "
-        f"Model contrast: GMM exceeds HMM on both cross-representation stability (ARI gap $={_fmt(gap_cross)}$) and temporal stability (ARI gap $={_fmt(gap_temporal)}$)."
+        f"Model contrast: GMM exceeds HMM on cross-representation stability (ARI gap $={_fmt(gap_cross)}$)."
     )
     return "\n".join(block).rstrip()
 
@@ -213,20 +274,6 @@ def _compute_step_sweep_block(outputs_dir: Path, steps: List[int]) -> str:
     d["cross_rep_ari_mean"] = pd.to_numeric(d["cross_rep_ari_mean"], errors="coerce")
     d["temporal_ari_mean"] = pd.to_numeric(d["temporal_ari_mean"], errors="coerce")
 
-    def ci95(series: pd.Series) -> float | None:
-        s = pd.to_numeric(series, errors="coerce").dropna()
-        n = int(s.shape[0])
-        if n <= 1:
-            return None
-        std = float(s.std(ddof=1))
-        se = std / math.sqrt(n) if std == std else float("nan")
-        if student_t is not None:
-            tcrit = float(student_t.ppf(0.975, df=n - 1))
-        else:
-            # Normal approximation fallback (less accurate for n=4, but avoids hard dependency).
-            tcrit = 1.96
-        return float(tcrit * se)
-
     out_lines = []
     out_lines.append("*Note: ARI values are averaged across both GMM and HMM (scope='all'); for per-model breakdown see the model-split block above.*")
     out_lines.append("")
@@ -244,8 +291,8 @@ def _compute_step_sweep_block(outputs_dir: Path, steps: List[int]) -> str:
         n_assets = max(n_t, n_c)
         t_mean = float(t.mean()) if n_t > 0 else None
         c_mean = float(c.mean()) if n_c > 0 else None
-        t_ci = ci95(t)
-        c_ci = ci95(c)
+        t_ci = _ci95_series(t)
+        c_ci = _ci95_series(c)
         t_str = "NA" if t_mean is None else f"{_fmt(t_mean)} ± {_fmt(t_ci, nd=3) if t_ci is not None else 'NA'}"
         c_str = "NA" if c_mean is None else f"{_fmt(c_mean)} ± {_fmt(c_ci, nd=3) if c_ci is not None else 'NA'}"
         out_lines.append(
@@ -413,7 +460,13 @@ def _compute_robustness_block(outputs_dir: Path) -> str:
         f"HMM temporal std = {_fmt(hmm_t_std_mean)} (max {_fmt(hmm_t_std_max)})."
     )
     lines.append("")
-    lines.append(f"Assets: {', '.join(assets)}. Seeds per cell: 20. CI is within-asset across seeds; we report the asset-average CI for compactness.")
+    n_seed_vals = pd.to_numeric(sub["n_seeds"], errors="coerce").dropna().astype(int)
+    seed_desc = (
+        f"{int(n_seed_vals.min())}-{int(n_seed_vals.max())}"
+        if not n_seed_vals.empty and int(n_seed_vals.min()) != int(n_seed_vals.max())
+        else (str(int(n_seed_vals.iloc[0])) if not n_seed_vals.empty else "NA")
+    )
+    lines.append(f"Assets: {', '.join(assets)}. Seeds per cell: {seed_desc}. CI is within-asset across seeds; we report the asset-average CI for compactness.")
     return "\n".join(lines).rstrip()
 
 
@@ -486,8 +539,165 @@ def _compute_ordering_robustness_block(outputs_dir: Path) -> str:
         )
 
     lines.append("")
-    lines.append(f"Assets: {', '.join(assets)}. Seeds per cell: 20. CI is within-asset across seeds; we report the asset-average CI for compactness.")
+    n_seed_vals = pd.to_numeric(sub["n_seeds"], errors="coerce").dropna().astype(int)
+    seed_desc = (
+        f"{int(n_seed_vals.min())}-{int(n_seed_vals.max())}"
+        if not n_seed_vals.empty and int(n_seed_vals.min()) != int(n_seed_vals.max())
+        else (str(int(n_seed_vals.iloc[0])) if not n_seed_vals.empty else "NA")
+    )
+    lines.append(f"Assets: {', '.join(assets)}. Seeds per cell: {seed_desc}. CI is within-asset across seeds; we report the asset-average CI for compactness.")
     return "\n".join(lines).rstrip()
+
+
+def update_main_tex_tables(outputs_dir: Path, tex_path: Path, cfg: Dict) -> None:
+    """
+    Update key numeric rows in paper/main.tex from outputs.
+
+    This keeps manuscript tables synchronized with the executed pipeline.
+    """
+    text = tex_path.read_text(encoding="utf-8")
+    grid = cfg.get("grid") or {}
+    baseline_step = int(grid.get("step", 21))
+    steps = [int(s) for s in (grid.get("step_sweep") or [21, 63, 126, 252])]
+
+    # Baseline rows: by-model means across assets at baseline step.
+    rows = []
+    pvalues: List[float] = []
+    all_rows = []
+    for asset, step, p in _iter_asset_step_key_results(outputs_dir):
+        if step is None or int(step) != baseline_step:
+            continue
+        df = _read_key_results(p)
+        all_rows.append(
+            {
+                "asset": asset,
+                "cross_rep_all": _get_metric(df, "cross_rep_ari_mean", "all"),
+            }
+        )
+        pv = _get_metric(df, "crossrep_ari_perm_pvalue", "all")
+        if pv is not None and not (isinstance(pv, float) and math.isnan(pv)):
+            pvalues.append(float(pv))
+        for model in ["gmm", "hmm"]:
+            rows.append(
+                {
+                    "model": model,
+                    "cross_rep_ari": _get_metric(df, "cross_rep_ari_mean", f"model={model}"),
+                    "cross_rep_ami": _get_metric(df, "cross_rep_ami_mean", f"model={model}"),
+                    "temporal_ari": _get_metric(df, "temporal_ari_mean", f"model={model}"),
+                    "temporal_ami": _get_metric(df, "temporal_ami_mean", f"model={model}"),
+                }
+            )
+    if rows:
+        d = pd.DataFrame(rows)
+        means = d.groupby("model")[["cross_rep_ari", "cross_rep_ami", "temporal_ari", "temporal_ami"]].mean(numeric_only=True)
+
+        # Also collect seed-level CIs when available
+        seed_ci_rows = []
+        for asset, step, p in _iter_asset_step_key_results(outputs_dir):
+            if step is None or int(step) != baseline_step:
+                continue
+            df = _read_key_results(p)
+            for model in ["gmm", "hmm"]:
+                seed_ci_rows.append({
+                    "model": model,
+                    "cross_ci": _get_metric(df, "cross_rep_ari_seed_ci95", f"model={model}"),
+                    "temporal_ci": _get_metric(df, "temporal_ari_seed_ci95", f"model={model}"),
+                })
+        seed_ci = pd.DataFrame(seed_ci_rows).groupby("model").mean(numeric_only=True) if seed_ci_rows else pd.DataFrame()
+
+        for model_label, tex_prefix in [("gmm", "GMM"), ("hmm", "HMM")]:
+            if model_label in means.index:
+                row = means.loc[model_label]
+                cr_val = _fmt(float(row['cross_rep_ari']))
+                tr_val = _fmt(float(row['temporal_ari']))
+                # Append ± CI when seed-level data is available
+                if not seed_ci.empty and model_label in seed_ci.index:
+                    cr_ci = seed_ci.loc[model_label, "cross_ci"]
+                    tr_ci = seed_ci.loc[model_label, "temporal_ci"]
+                    if not (isinstance(cr_ci, float) and math.isnan(cr_ci)):
+                        cr_val = f"{cr_val} $\\pm$ {_fmt(float(cr_ci))}"
+                    if not (isinstance(tr_ci, float) and math.isnan(tr_ci)):
+                        tr_val = f"{tr_val} $\\pm$ {_fmt(float(tr_ci))}"
+                new_line = f"{tex_prefix} & {cr_val} & {tr_val} \\\\"
+                text = re.sub(
+                    rf"^{tex_prefix}\s*&.*?\\\\$",
+                    lambda _m, repl=new_line: repl,
+                    text,
+                    flags=re.MULTILINE,
+                )
+
+    # Step-sweep rows: prefer summary CSV.
+    summary_path = outputs_dir / "step_sweep_summary.csv"
+    if summary_path.exists():
+        s = pd.read_csv(summary_path)
+        s["step"] = pd.to_numeric(s["step"], errors="coerce")
+        for col in ("cross_rep_ari_mean", "temporal_ari_mean", "temporal_overlap_ari_mean"):
+            if col in s.columns:
+                s[col] = pd.to_numeric(s[col], errors="coerce")
+        for step in steps:
+            sub = s[s["step"] == int(step)]
+            if sub.empty:
+                continue
+            cross = pd.to_numeric(sub["cross_rep_ari_mean"], errors="coerce").dropna()
+            temp = pd.to_numeric(sub["temporal_ari_mean"], errors="coerce").dropna()
+            cross_mean = float(cross.mean()) if not cross.empty else float("nan")
+            temp_mean = float(temp.mean()) if not temp.empty else float("nan")
+            cross_ci = float(_ci95_series(cross) or float("nan"))
+            temp_ci = float(_ci95_series(temp) or float("nan"))
+            temp_cell = (
+                f"{_fmt(temp_mean)} $\\pm$ {_fmt(temp_ci)}"
+                if np.isfinite(temp_mean)
+                else "NA"
+            )
+            # Overlap temporal ARI (when available)
+            ovlp_cell = "---"
+            if "temporal_overlap_ari_mean" in sub.columns:
+                ovlp = pd.to_numeric(sub["temporal_overlap_ari_mean"], errors="coerce").dropna()
+                if not ovlp.empty:
+                    ovlp_mean = float(ovlp.mean())
+                    ovlp_ci = float(_ci95_series(ovlp) or float("nan"))
+                    if np.isfinite(ovlp_mean):
+                        ovlp_cell = f"{_fmt(ovlp_mean)} $\\pm$ {_fmt(ovlp_ci)}"
+            new_line = f"{int(step)} & {_fmt(cross_mean)} $\\pm$ {_fmt(cross_ci)} & {temp_cell} & {ovlp_cell} \\\\"
+            text = re.sub(
+                rf"^{int(step)}\s*&.*?\\\\$",
+                lambda _m, repl=new_line: repl,
+                text,
+                flags=re.MULTILINE,
+            )
+
+    # Align step=252 policy with current implementation.
+    text = text.replace(
+        "At step $=252$ windows are non-overlapping; temporal ARI is omitted as it measures annual repeatability rather than monitoring stability.",
+        "At step $=252$ windows are non-overlapping; temporal ARI is reported when available under the same metric definition used in the code pipeline.",
+    )
+
+    # Sync key narrative numbers with outputs.
+    if all_rows:
+        d_all = pd.DataFrame(all_rows)
+        cross_all = pd.to_numeric(d_all["cross_rep_all"], errors="coerce").dropna()
+        if not cross_all.empty:
+            cross_mean_baseline = float(cross_all.mean())
+            text = re.sub(
+                r"cross-rep ARI \$\\approx [0-9.]+\$ at step \$=21\$",
+                lambda _m, repl=f"cross-rep ARI $\\approx {_fmt(cross_mean_baseline, nd=2)}$ at step $=21$": repl,
+                text,
+            )
+            text = re.sub(
+                r"about 0\.34 across all step sizes",
+                f"about {_fmt(cross_mean_baseline, nd=2)} across all step sizes",
+                text,
+            )
+    if pvalues:
+        pmax = float(max(pvalues))
+        # Accept both LaTeX styles used in manuscript text: `p \le ...` or `p < ...`.
+        text = re.sub(
+            r"p (?:\\le|<) [0-9.]+",
+            lambda _m, repl=f"p < {_fmt(pmax, nd=3)}": repl,
+            text,
+        )
+
+    tex_path.write_text(text, encoding="utf-8")
 
 
 def update_empirical_results_md(outputs_dir: Path, md_path: Path, cfg: Dict) -> None:

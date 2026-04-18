@@ -52,6 +52,7 @@ python run.py
 
 Data requirement: `data/` CSVs (e.g. `GSPC.csv`, `IEF.csv`). If a CSV is missing,
 `run.py` will automatically download it via yfinance at startup.
+For reproducibility, sample bounds are configured in `config.yaml` under `data.start_date` and `data.end_date`.
 
 ## Multi-asset usage (optional)
 
@@ -81,7 +82,7 @@ In `config.yaml`:
 ### Core thesis evidence (states are not invariant)
 
 - **Cross-representation agreement** (ARI/NMI): show low/moderate agreement across “reasonable” representations.
-- **Temporal stability** (consecutive-window ARI/NMI): show drift over time (well below 1.0).
+- **Temporal stability** (consecutive-window ARI/NMI on disjoint segments): show drift over time without overlap inflation.
 - **Semantic drift**: show that state meanings (risk profiles) shift across representations.
 
 ### Preprocessing ablation (rep_a_unscaled)
