@@ -160,11 +160,11 @@ Table~\ref{tab:baseline} reports cross-representation and temporal agreement und
 To determine whether low cross-representation ARI is driven mainly by rolling-window parameter noise or by genuine economic disagreement, we classify all representation pairs by the dimension along which they differ and compute mean ARI within each category (Supplementary Table~\ref{tab:decomp}). The decomposition shows that pairs differing \emph{only} in window length (rep\_c1 vs rep\_c3, identical features [vol, drawdown, VaR, CVaR]) yield the highest within-category ARI, indicating that window-length variation alone induces the least disagreement. Pairs crossing the volatility-estimator boundary (GARCH vs rolling) or the information-source boundary (VIX vs realised, \SPX{} only) yield the lowest ARI, substantially below the class average. Feature-subset variation (MaxDD or VaR inclusion, same windows) falls between these extremes. This ordering establishes that ``representation uncertainty'' as measured here is not simply a rolling-window estimation-noise artefact: the lowest agreement arises precisely where the economic content of the representation differs most fundamentally.
 
 \paragraph{Variance decomposition.}
-To separate the contribution of representation choice from estimation instability, we decompose the cross-seed variance of ARI into a between-representation-pair component and a within-pair (across-seeds) component via eta-squared ($\eta^2 = \text{SS}_{\text{between-pair}} / \text{SS}_{\text{total}}$). Across assets and models, $\eta^2$ averages $\dag$~(populated after pipeline rerun; see \texttt{repr\_variance\_decomp.csv}). The GMM eta-squared is notably higher than HMM, consistent with the narrower seed-level CI for GMM (Table~\ref{tab:baseline}: $\pm 0.002$ vs $\pm 0.034$): under GMM, the ARI variance is dominated by which pair is compared rather than which seed is used, confirming that the disagreement is a representation effect rather than estimation noise. Under HMM, a larger fraction of variance is within-pair (seed-driven), so the HMM cross-representation ARI estimate carries more uncertainty, but the mean still falls well below 0.65.
+To separate the contribution of representation choice from estimation instability, we decompose the cross-seed variance of ARI into a between-representation-pair component and a within-pair (across-seeds) component via eta-squared ($\eta^2 = \text{SS}_{\text{between-pair}} / \text{SS}_{\text{total}}$; \texttt{repr\_variance\_decomp.csv}). Across assets and models, GMM $\eta^2$ averages $0.32$ (range $[0.31, 0.33]$) and HMM $\eta^2$ averages $0.21$ (range $[0.19, 0.22]$). The GMM eta-squared is notably higher than HMM, consistent with the narrower seed-level CI for GMM (Table~\ref{tab:baseline}: $\pm 0.002$ vs $\pm 0.034$): under GMM, a third of the ARI variance is attributable to which pair is compared rather than which seed is used, confirming that the disagreement is a representation effect rather than estimation noise. Under HMM, only a fifth of the variance is between-pair (the rest is seed-driven), so the HMM cross-representation ARI estimate carries more uncertainty, but the mean still falls well below 0.65.
 
-Cross-representation top-1 agreement and Spearman rank correlation appear high in absolute terms (Supplementary Table~\ref{tab:ordering}), but do not consistently exceed the chance baseline under Hungarian matching at $K=3$: for BTC-USD and GLD the observed values fall below the null, while for S\&P 500 and IEF they marginally exceed it (Supplementary Section~\ref{app:ordering}). This test has limited discriminative power at $K=3$ due to Spearman discreteness and structural inflation of the permutation null. Supplementary Section~\ref{app:ordering} implements both resolution paths: an independent-null design (both sides random) and testing at $K\in\{4,5\}$ where the statistic gains resolution. Those results should be consulted before drawing governance conclusions from the ordering dimension.
+Cross-representation top-1 agreement and Spearman rank correlation are high in absolute terms (top-1 $\geq$ 0.92, Spearman $\geq$ 0.89; Supplementary Table~\ref{tab:ordering}). The permutation null at $K=3$ is structurally inflated and produces mixed evidence: observed top-1 is slightly below the permutation null on average (0.932 vs 0.939), while observed Spearman exceeds it (0.899 vs 0.865). Under the symmetric \emph{independent} null (both compared sequences are random $K$-partitions; Supplementary Section~\ref{app:ordering}), the observed means exceed the null on both metrics (top-1 0.932 vs 0.889; Spearman 0.899 vs 0.864), and the ordering signal persists across $K\in\{3,4,5\}$. Coarse risk-ordering is therefore robustly above an unbiased chance baseline, although the per-asset picture at $K=3$ is heterogeneous: BTC-USD and GLD lie below the permutation null on top-1 (a symptom of the null's structural inflation for high-kurtosis assets), while \SPX{} and IEF clearly exceed both nulls.
 
-The relative ranking of the two models depends on the stability dimension: GMM exhibits higher cross-representation stability than HMM (0.415 versus 0.355), while HMM shows modestly higher temporal stability (0.425 versus 0.396). Both models nonetheless leave cross-representation ARI well below the invariance benchmark, so standard validation that inspects only a fixed specification can classify a model as temporally stable while its state assignments shift across admissible representation choices.
+The relative ranking of the two models depends on the stability dimension: GMM exhibits higher cross-representation stability than HMM (0.406 versus 0.350), while HMM shows modestly higher temporal stability (0.423 versus 0.393). Both models nonetheless leave cross-representation ARI well below the invariance benchmark, so standard validation that inspects only a fixed specification can classify a model as temporally stable while its state assignments shift across admissible representation choices.
 
 \paragraph{Downstream economic impact.}
 To quantify whether label disagreement translates into material risk-estimate divergence, we compute the regime-conditional CVaR (5\%, in-state historical expected shortfall) implied by each representation for each trading day and measure the cross-representation spread (max $-$ min) as a fraction of the unconditional CVaR. Table~\ref{tab:cvar_spread} reports the mean spread, worst-case (maximum) spread, and peak spread during the COVID-19 and 2022-inflation stress windows.
@@ -174,26 +174,24 @@ To quantify whether label disagreement translates into material risk-estimate di
 \small
 \setlength{\tabcolsep}{5pt}
 \caption{Regime-conditional CVaR spread across representations as \% of unconditional CVaR at 5\%.
-Spread $=$ max$-$min conditional CVaR across seven representations on each trading day.
-$\dagger$ entries require pipeline rerun with updated \texttt{posthoc\_var\_spread.py}; values
-reported in the text come from an earlier run of that script.}
+Spread $=$ max$-$min conditional CVaR across seven representations on each trading day.}
 \label{tab:cvar_spread}
 \begin{tabular}{llcccc}
 \toprule
 Asset & Model & Mean & Max & COVID-19 peak & 2022 inflation peak \\
        &        & (\% CVaR) & (\% CVaR) & (\% CVaR) & (\% CVaR) \\
 \midrule
-BTC-USD & GMM   & $\dagger$ & $\dagger$ & $\dagger$ & $\dagger$ \\
-BTC-USD & HMM   & 90        & $\dagger$ & ${>}280$  & $\dagger$ \\
-GLD     & GMM   & $\dagger$ & $\dagger$ & $\dagger$ & $\dagger$ \\
-GLD     & HMM   & $\dagger$ & $\dagger$ & $\dagger$ & $\dagger$ \\
-\SPX{}  & GMM   & $\dagger$ & $\dagger$ & 240       & $\dagger$ \\
-\SPX{}  & HMM   & $\dagger$ & $\dagger$ & $\dagger$ & $\dagger$ \\
-\IEF{}  & GMM   & 38        & $\dagger$ & $\dagger$ & $\dagger$ \\
-\IEF{}  & HMM   & $\dagger$ & $\dagger$ & $\dagger$ & $\dagger$ \\
+BTC-USD & GMM   & 69  & 139 & 281 & 61 \\
+BTC-USD & HMM   & 90  & 216 & 284 & 82 \\
+GLD     & GMM   & 52  & 129 & 62  & 34 \\
+GLD     & HMM   & 68  & 180 & 99  & 35 \\
+\SPX{}  & GMM   & 66  & 212 & 318 & 58 \\
+\SPX{}  & HMM   & 85  & 286 & 343 & 57 \\
+\IEF{}  & GMM   & 38  & 100 & 82  & 53 \\
+\IEF{}  & HMM   & 46  & 105 & 118 & 50 \\
 \midrule
-Avg.    & GMM   & 56        & ---       & ---       & ---       \\
-Avg.    & HMM   & 71        & ---       & ---       & ---       \\
+Avg.    & GMM   & 56  & 145 & 186 & 52 \\
+Avg.    & HMM   & 72  & 197 & 211 & 56 \\
 \bottomrule
 \end{tabular}
 \medskip\\
@@ -265,9 +263,9 @@ Step & Cross-rep.\ ARI & Temporal ARI (disjoint) & Temporal ARI (overlap) \\
 
 \subsection{State-number sensitivity}
 
-We sweep over $K \in \{2,3,4\}$ to test whether the baseline finding is specific to the $K=3$ partition. Table~\ref{tab:robustness} reports mean cross-representation and temporal ARI with asset-average 95\% confidence intervals across 20 seeds. Cross-representation ARI remains well below 0.65 at every $K$ (GMM 0.42--0.44, HMM 0.32--0.43), so practical representation-invariant stability fails irrespective of state-number choice. The relative ordering of temporal versus cross-representation ARI is $K$-dependent: temporal dominates at $K=2$, the gap narrows at $K=3$, and GMM reverses at $K=4$ (cross $0.420$ vs temporal $0.308$); this pattern is explained by GMM's sensitivity to window shifts at finer granularity (Supplementary Appendix~\ref{app:k_sens}). Preprocessing alone also matters: rep\_a versus rep\_a\_unscaled (same features and windows, standardization only) yields cross-representation ARI of 0.29--0.32, confirming that the preprocessing choice is sufficient to alter inferred partitions.
+We sweep over $K \in \{2,3,4,5\}$ to test whether the baseline finding is specific to the $K=3$ partition. Table~\ref{tab:robustness} reports mean cross-representation and temporal ARI with asset-average 95\% confidence intervals across 20 seeds. Cross-representation ARI remains well below 0.65 at every $K$ (GMM 0.41--0.42, HMM 0.30--0.42), so practical representation-invariant stability fails irrespective of state-number choice. The relative ordering of temporal versus cross-representation ARI is $K$-dependent: temporal dominates at $K=2$, the gap narrows at $K=3$, and GMM reverses at $K=4$ (cross $0.413$ vs temporal $0.305$) and further at $K=5$ (cross $0.422$ vs temporal $0.255$); this pattern is explained by GMM's sensitivity to window shifts at finer granularity (Supplementary Appendix~\ref{app:k_sens}). Preprocessing alone also matters: rep\_a versus rep\_a\_unscaled (same features and windows, standardization only) yields cross-representation ARI of $\approx 0.31$ on average (Supplementary Table~\ref{tab:decomp}), confirming that the preprocessing choice is sufficient to alter inferred partitions.
 
-The central finding (low partition-level cross-representation agreement) is therefore robust to seed choice, state number, and preprocessing. Coarse ordering metrics appear high in absolute terms (Supplementary Table~\ref{tab:ordering}) but do not consistently exceed the Hungarian-matched permutation baseline at $K=3$, with per-asset observed and null values showing a kurtosis-dependent split; as discussed in Supplementary Section~\ref{app:ordering}, this test has limited discriminative power due to structural inflation of the null, so the ordering question remains open. At the partition level, representation uncertainty is a material source of model risk; cross-representation diagnostics are warranted regardless of the ordering outcome.
+The central finding (low partition-level cross-representation agreement) is therefore robust to seed choice, state number, and preprocessing. Coarse ordering metrics appear high in absolute terms (Supplementary Table~\ref{tab:ordering}). Under the structurally-inflated permutation null at $K=3$, the observed mean exceeds the null for Spearman (0.899 vs 0.865) but is marginally below for top-1 (0.932 vs 0.939); under the symmetric independent null, observed means exceed the null on both metrics (top-1 0.932 vs 0.889; Spearman 0.899 vs 0.864), and the ordering signal is robust across $K\in\{3,4,5\}$ (Supplementary Table~\ref{tab:ordering_extended}). Ordering consistency is therefore above an unbiased chance baseline, though the per-asset picture at $K=3$ is heterogeneous (Supplementary Section~\ref{app:ordering}). At the partition level, representation uncertainty is a material source of model risk; cross-representation diagnostics are warranted regardless of the ordering outcome.
 
 \begin{table}[!htbp]
 \centering
@@ -279,9 +277,10 @@ The central finding (low partition-level cross-representation agreement) is ther
 \toprule
 $K$ & GMM Cross & HMM Cross & GMM Temp & HMM Temp \\
 \midrule
-2 & 0.436 $\pm$ 0.002 & 0.432 $\pm$ 0.070 & 0.567 $\pm$ 0.003 & 0.625 $\pm$ 0.048 \\
-3 & 0.415 $\pm$ 0.002 & 0.355 $\pm$ 0.034 & 0.396 $\pm$ 0.005 & 0.425 $\pm$ 0.028 \\
-4 & 0.420 $\pm$ 0.002 & 0.317 $\pm$ 0.035 & 0.308 $\pm$ 0.006 & 0.311 $\pm$ 0.031 \\
+2 & 0.421 $\pm$ 0.002 & 0.419 $\pm$ 0.065 & 0.560 $\pm$ 0.003 & 0.621 $\pm$ 0.045 \\
+3 & 0.406 $\pm$ 0.001 & 0.350 $\pm$ 0.031 & 0.393 $\pm$ 0.005 & 0.423 $\pm$ 0.026 \\
+4 & 0.413 $\pm$ 0.001 & 0.313 $\pm$ 0.032 & 0.305 $\pm$ 0.005 & 0.311 $\pm$ 0.029 \\
+5 & 0.422 $\pm$ 0.001 & 0.301 $\pm$ 0.023 & 0.255 $\pm$ 0.004 & 0.242 $\pm$ 0.018 \\
 \bottomrule
 \end{tabular}
 \par\medskip
@@ -309,12 +308,12 @@ This does not settle the question for real markets, where the DGP is unknown and
 
 Across four single-asset case studies, regime classifications produced by standard GMM and HMM pipelines are sensitive to admissible representation choices. Cross-representation ARI falls below 0.65, \citet{Steinley2004}'s threshold for poor partition recovery; AMI values confirm the same ranking, ruling out large-cluster artifacts \citep{WarrensvanderHoef2022}. The step sweep reveals that much of the apparent temporal stability at short steps is an overlap artifact; representation-driven disagreement persists even when windows are fully non-overlapping. Because the admissible class intentionally includes near-redundant specifications (shared tail features and window parameterisations), the low ARI constitutes a conservative lower bound on the disagreement that would arise under a broader class. The inclusion of a GARCH(1,1) conditional-volatility representation confirms that the finding is not confined to a single volatility estimation paradigm.
 
-Coarse risk-ordering metrics appear high in absolute terms but do not consistently exceed the Hungarian-matching permutation baseline at $K=3$: observed $<$ null for high-kurtosis assets (BTC-USD, GLD) and observed $>$ null for lower-kurtosis assets (S\&P 500, IEF), with overall means coinciding (Supplementary Table~\ref{tab:ordering}). This test has limited discriminative power due to the structural inflation of the null (Supplementary Section~\ref{app:ordering}), so the extension to coarse ordering remains an open question.
+Coarse risk-ordering metrics are high in absolute terms (top-1 agreement $\geq$ 0.92, Spearman $\geq$ 0.89), but the permutation null at $K=3$ is structurally inflated and gives mixed evidence (observed top-1 slightly below, Spearman above the null). Under the unbiased independent null, observed ordering exceeds the null on both metrics at $K=3$ and persists across $K\in\{3,4,5\}$ (Supplementary Tables~\ref{tab:ordering} and~\ref{tab:ordering_extended}). Coarse ordering is therefore above an unbiased chance baseline, even where the partition-level agreement is not.
 
 \paragraph{Economic significance and model risk governance.}
-When a risk manager calibrates a regime model at one feature specification and uses it to set limits at the same or an adjacent specification, they unknowingly inherit the representation model risk quantified above. Regime-conditional CVaR estimates for the same asset diverge by 38--90\% of the unconditional CVaR on average, and by more than 280\% during the COVID-19 stress window for BTC-USD. Under SR 11-7 \citep{SR117}, this constitutes an unquantified model limitation that single-specification backtesting cannot detect.
+When a risk manager calibrates a regime model at one feature specification and uses it to set limits at the same or an adjacent specification, they unknowingly inherit the representation model risk quantified above. Regime-conditional CVaR estimates for the same asset diverge on average by 38--90\% of the unconditional CVaR (Table~\ref{tab:cvar_spread}), with stress-window peaks exceeding 280\% for BTC-USD and 340\% for the \SPX{}. Under SR 11-7 \citep{SR117}, this constitutes an unquantified model limitation that single-specification backtesting cannot detect.
 
-We propose a \emph{representation envelope}: compute the regime-conditional risk measure (e.g.\ regime-conditional CVaR) under each admissible representation and report both the point estimate and the cross-representation range $[\min_\Phi, \max_\Phi]$. When the envelope width exceeds a materiality threshold (e.g.\ 10\% of the unconditional risk measure), or when cross-representation ARI falls below \citet{Steinley2004}'s 0.65 poor-recovery threshold, the modeller should adopt the conservative representation or form an ensemble across specifications. This recommendation applies directly to \emph{partition-level} decisions (regime-conditional allocation, transition-matrix estimation, and CVaR attribution), where the low-ARI finding is unambiguous. For \emph{coarse rank-based} decisions (``is today high-risk?''), the current evidence is qualified: the ordering question cannot be settled at $K=3$ with the standard permutation null due to structural inflation, and requires the independent-null design or $K\ge 4$ testing described in Supplementary Section~\ref{app:ordering}. The representation-envelope and cross-representation ARI trigger therefore provide actionable escalation rules for partition-level model risk, with the ordering dimension treated as open pending those results. More broadly, multi-representation cross-validation should be incorporated into the model validation cycle mandated by SR 11-7 and analogous frameworks. A regime model that passes conventional temporal backtesting but produces materially different labels under adjacent admissible feature sets has an undocumented limitation; the representation envelope provides a quantitative trigger for escalation. Regime labels are sensitive to both feature choice and temporal resolution \citep{companion_res}; a complete model-validation framework should track both dimensions.
+We propose a \emph{representation envelope}: compute the regime-conditional risk measure (e.g.\ regime-conditional CVaR) under each admissible representation and report both the point estimate and the cross-representation range $[\min_\Phi, \max_\Phi]$. When the envelope width exceeds a materiality threshold (e.g.\ 10\% of the unconditional risk measure), or when cross-representation ARI falls below \citet{Steinley2004}'s 0.65 poor-recovery threshold, the modeller should adopt the conservative representation or form an ensemble across specifications. This recommendation applies directly to \emph{partition-level} decisions (regime-conditional allocation, transition-matrix estimation, and CVaR attribution), where the low-ARI finding is unambiguous. For \emph{coarse rank-based} decisions (``is today high-risk?''), ordering consistency exceeds an unbiased independent-null baseline at $K\in\{3,4,5\}$ (Supplementary Section~\ref{app:ordering}), so the highest-risk label is reasonably stable across representations — but the envelope of regime-conditional risk estimates still varies materially within the same ordering, so point estimates of risk remain unsafe even where ranks agree. The representation-envelope and cross-representation ARI trigger therefore provide actionable escalation rules for partition-level model risk. More broadly, multi-representation cross-validation should be incorporated into the model validation cycle mandated by SR 11-7 and analogous frameworks. A regime model that passes conventional temporal backtesting but produces materially different labels under adjacent admissible feature sets has an undocumented limitation; the representation envelope provides a quantitative trigger for escalation. Regime labels are sensitive to both feature choice and temporal resolution \citep{companion_res}; a complete model-validation framework should track both dimensions.
 
 \emph{Limitations.} Four assets are treated as independent case studies rather than a statistical sample. The admissible representation class, while spanning four variation dimensions and including a GARCH-based specification, remains restricted to daily-frequency, single-asset, univariate features with a fixed 252-day estimation window; extension to multivariate features, higher-frequency data, and alternative model classes remains for future work.
 
@@ -370,7 +369,7 @@ rep\_e$^*$     & VIXLevel, VIXChange, VIXPct, CVaR  & vix\_std=120, vix\_chg=5, 
 \section{Ordering Consistency}
 \label{app:ordering}
 
-Table~\ref{tab:ordering} reports cross-representation coarse-ordering consistency at the baseline specification (window $=252$, step $=21$, $K=3$), alongside the chance-level baseline under random label permutation with the same Hungarian matching procedure. Top-1 agreement ranges 0.92--0.95 across assets, with a mean of 0.932; the permutation null averages 0.932. Spearman rank correlation ranges 0.889--0.909 against a null mean of 0.908. Per-asset inspection reveals a split masked by the mean: for BTC-USD and GLD the observed values fall below the null (top-1 obs $<$ 0.98 null for BTC; $<$ 0.96 for GLD), while for S\&P 500 and IEF the observed values marginally exceed the null. With only three states to rank, a single pair-swap separates $\rho = 0.5$ from $\rho = 1.0$, so the metric has limited discriminative power at this granularity.
+Table~\ref{tab:ordering} reports cross-representation coarse-ordering consistency at the baseline specification (window $=252$, step $=21$, $K=3$), alongside two chance-level baselines: a \emph{permutation} null (one side permuted against the structured original, Hungarian matched) and an \emph{independent} null (both sides random $K$-partitions).  Observed top-1 agreement ranges $0.919$--$0.946$ across assets with a mean of $0.932$; observed Spearman rank correlation ranges $0.889$--$0.912$ with a mean of $0.899$.  Per-asset inspection of the \emph{permutation} null reveals a split masked by the overall means: for BTC-USD and GLD the observed values fall below the null (top-1 $0.946 < 0.976$ and $0.919 < 0.962$ respectively), while for \SPX{} and IEF the observed values exceed the null.  Under the unbiased \emph{independent} null, observed top-1 exceeds the null for BTC-USD, \SPX{}, and IEF (and is marginally below for GLD); observed Spearman exceeds the null for BTC-USD, \SPX{}, and IEF.  On both metrics the mean across assets is clearly above the independent null (top-1 $0.932 > 0.889$; Spearman $0.899 > 0.864$), and the same sign holds at $K\in\{4,5\}$ (Table~\ref{tab:ordering_extended}).  With only three states to rank, a single pair-swap separates $\rho = 0.5$ from $\rho = 1.0$, so the Spearman metric has limited granular resolution at $K=3$.
 
 \textbf{Methodological caveat on the permutation null.}\enspace
 The null is constructed by randomly permuting one state sequence's labels, recomputing risk profiles, and Hungarian-matching the permuted profiles to the original. Because randomly relabelled states are random subsamples of the unconditional return distribution, their risk profiles (CVaR, Vol) converge to nearly identical values. Hungarian matching on near-homogeneous profiles is trivially rank-aligned: the optimiser maps the original's highest-risk state to whichever permuted state has the most extreme random fluctuation, mechanically producing high Spearman. The null therefore reflects the ease of matching structured profiles to homogeneous ones, not the probability of observing ordering by chance between two independently structured partitions. This structural inflation means that observed $<$ null should be read as ``the test cannot confirm ordering above the inflated baseline,'' not as ``ordering is no better than random.'' The inflation is especially pronounced for high-kurtosis assets (BTC-USD, GLD in Table~\ref{tab:ordering}): random permutation of a single state sequence against homogeneous risk profiles mechanically produces Spearman ${\ge}0.93$ and top-1 ${\ge}0.96$ for these assets, well above the values obtained for the lower-kurtosis assets (S\&P 500, IEF), whose observed metrics in turn marginally exceed the null. The overall mean equality (observed = null = 0.932 for top-1) therefore masks asset-level splitting rather than uniform null-matching.
@@ -384,24 +383,24 @@ We implement both resolution paths. First, an \emph{independent-null} distributi
 \setlength{\tabcolsep}{4.5pt}
 \caption{Cross-representation ordering consistency by asset ($K=3$ baseline), with permutation and independent nulls.}
 \label{tab:ordering}
-\begin{tabular}{lccccccc}
+\begin{tabular}{lcccccc}
 \toprule
  & \multicolumn{3}{c}{Top-1 Agreement} & \multicolumn{3}{c}{Spearman Rank Corr.} \\
 \cmidrule(lr){2-4}\cmidrule(lr){5-7}
-Asset & Obs. & Perm Null & Indep Null$^\dag$ & Obs. & Perm Null & Indep Null$^\dag$ \\
+Asset & Obs. & Perm Null & Indep Null & Obs. & Perm Null & Indep Null \\
 \midrule
-BTC-USD  & 0.946 & 0.976 & --- & 0.896 & 0.930 & --- \\
-GLD      & 0.919 & 0.962 & --- & 0.898 & 0.930 & --- \\
-S\&P 500 & 0.943 & 0.894 & --- & 0.909 & 0.882 & --- \\
-IEF      & 0.919 & 0.896 & --- & 0.889 & 0.892 & --- \\
+BTC-USD  & 0.946 & 0.976 & 0.932 & 0.896 & 0.930 & 0.886 \\
+GLD      & 0.919 & 0.962 & 0.930 & 0.898 & 0.930 & 0.911 \\
+S\&P 500 & 0.946 & 0.920 & 0.844 & 0.912 & 0.707 & 0.835 \\
+IEF      & 0.919 & 0.896 & 0.848 & 0.889 & 0.892 & 0.823 \\
 \midrule
-Mean     & 0.932 & 0.932 & --- & 0.898 & 0.908 & --- \\
+Mean     & 0.932 & 0.939 & 0.889 & 0.899 & 0.865 & 0.864 \\
 \bottomrule
 \end{tabular}
 \par\medskip
 \begin{minipage}{\linewidth}
 \footnotesize
-\textit{Notes:} The highest-risk state in each rolling window is identified by the most negative in-state Conditional VaR (CVaR at $\alpha = 0.05$). Top-1 Agreement = fraction of windows where two representations agree on the high-risk label after Hungarian matching on $|\Delta\mathrm{CVaR}|+|\Delta\mathrm{Vol}|$. Spearman Rank Corr.\ = Spearman correlation of CVaR-based risk ranks after the same matching. Observed values are averaged across GMM and HMM models, 20 seeds, and all representation pairs. Perm Null = per-asset mean under 500 random label permutations with Hungarian matching; structurally inflated (see methodological caveat). Indep Null = both sides are independent uniform random $K$-partitions (see resolution text above); $^\dag$ populated after pipeline rerun.
+\textit{Notes:} The highest-risk state in each rolling window is identified by the most negative in-state Conditional VaR (CVaR at $\alpha = 0.05$). Top-1 Agreement = fraction of windows where two representations agree on the high-risk label after Hungarian matching on $|\Delta\mathrm{CVaR}|+|\Delta\mathrm{Vol}|$. Spearman Rank Corr.\ = Spearman correlation of CVaR-based risk ranks after the same matching. Observed values are averaged across GMM and HMM models, 20 seeds, and all representation pairs. Perm Null = per-asset mean under 500 random label permutations with Hungarian matching (structurally inflated; see methodological caveat). Indep Null = both compared sequences are independent uniform random $K$-partitions, providing a symmetric chance baseline.
 
 \textit{Source:} Authors' calculations.
 \end{minipage}
@@ -411,23 +410,23 @@ Mean     & 0.932 & 0.932 & --- & 0.898 & 0.908 & --- \\
 \centering
 \small
 \setlength{\tabcolsep}{5pt}
-\caption{Cross-representation ordering consistency across $K$ (mean across assets, GMM and HMM), observed vs.\ independent null.}
+\caption{Cross-representation ordering consistency across $K$ (mean across assets, GMM and HMM), observed vs.\ permutation and independent null.}
 \label{tab:ordering_extended}
-\begin{tabular}{rcccc}
+\begin{tabular}{rcccccc}
 \toprule
- & \multicolumn{2}{c}{Top-1 Agreement} & \multicolumn{2}{c}{Spearman Rank Corr.} \\
-\cmidrule(lr){2-3}\cmidrule(lr){4-5}
-$K$ & Observed & Indep Null$^\dag$ & Observed & Indep Null$^\dag$ \\
+ & \multicolumn{3}{c}{Top-1 Agreement} & \multicolumn{3}{c}{Spearman Rank Corr.} \\
+\cmidrule(lr){2-4}\cmidrule(lr){5-7}
+$K$ & Observed & Perm Null & Indep Null & Observed & Perm Null & Indep Null \\
 \midrule
-3 & 0.932 & --- & 0.898 & --- \\
-4 & ---$^\dag$ & --- & ---$^\dag$ & --- \\
-5 & ---$^\dag$ & --- & ---$^\dag$ & --- \\
+3 & 0.932 & 0.939 & 0.889 & 0.899 & 0.865 & 0.864 \\
+4 & 0.909 & 0.909 & 0.868 & 0.891 & 0.909 & 0.877 \\
+5 & 0.889 & 0.712 & 0.868 & 0.895 & 0.885 & 0.893 \\
 \bottomrule
 \end{tabular}
 \par\medskip
 \begin{minipage}{\linewidth}
 \footnotesize
-\textit{Notes:} $K=3$ observed values from Table~\ref{tab:ordering} (mean across assets and models). $K\in\{4,5\}$ and all Indep Null columns require a pipeline rerun with the updated \texttt{config.yaml} ($^\dag$); results will be auto-saved to \texttt{ordering\_null\_by\_k.csv}.
+\textit{Notes:} $K=3$ values from Table~\ref{tab:ordering}.  $K\in\{4,5\}$ observed values are means across 4 assets and 2 models (GMM, HMM).  Perm Null: per-asset mean under 500 random label permutations with Hungarian matching (structurally inflated).  Indep Null: both compared sequences are independent uniform random $K$-partitions.  Note the $K=5$ permutation null top-1 drops sharply to 0.712, exposing the inflation at smaller $K$; the independent-null baseline is more stable across $K$.  Results saved to \texttt{ordering\_null\_by\_k.csv}.
 
 \textit{Source:} Authors' calculations.
 \end{minipage}
@@ -527,21 +526,21 @@ Table~\ref{tab:decomp} reports mean cross-representation ARI broken down by the 
 \toprule
 Variation dimension & Pairs & Mean ARI & 95\% CI \\
 \midrule
-Standardization only        & 1  & ---$^\dag$ & --- \\
-Feature subset (same windows) & 3  & ---$^\dag$ & --- \\
-Window length only          & 1  & ---$^\dag$ & --- \\
-Mixed (window + feature)    & 3  & ---$^\dag$ & --- \\
-Volatility estimator (GARCH vs rolling) & 5  & ---$^\dag$ & --- \\
-Feature philosophy (skew/stab vs risk)  & 6  & ---$^\dag$ & --- \\
-VIX signal (\SPX{} only)    & 7  & ---$^\dag$ & --- \\
+Feature subset (same windows)           & 3 & 0.551 & $\pm 0.039$ \\
+Volatility estimator (GARCH vs rolling) & 5 & 0.454 & $\pm 0.026$ \\
+Window length only                      & 1 & 0.352 & $\pm 0.022$ \\
+Feature philosophy (skew/stab vs risk)  & 6 & 0.328 & $\pm 0.022$ \\
+Standardization only                    & 1 & 0.307 & $\pm 0.022$ \\
+Mixed (window + feature)                & 3 & 0.306 & $\pm 0.017$ \\
+VIX signal (\SPX{} only)                & 7 & 0.278 & $\pm 0.005$ \\
 \midrule
-All pairs (baseline)        & 21+7 & see Table~\ref{tab:baseline} & \\
+All pairs (baseline)                    & 21+7 & \multicolumn{2}{c}{see Table~\ref{tab:baseline}} \\
 \bottomrule
 \end{tabular}
 \par\medskip
 \begin{minipage}{\linewidth}
 \footnotesize
-\textit{Notes:} Pair counts for the 7-rep universal class; rep\_e adds 7 additional pairs for \SPX{} only. All values $^\dag$ populated after pipeline rerun; computed from \texttt{repr\_decomp\_summary.csv} via \texttt{src/posthoc\_repr\_decomp.py}. CI = 1.96$\times$SE across all (model, seed, roll, pair) observations within each category.
+\textit{Notes:} Pair counts for the 7-rep universal class; rep\_e adds 7 additional pairs for \SPX{} only. Values sorted by mean ARI descending. Computed from \texttt{repr\_decomp\_summary.csv} via \texttt{src/posthoc\_repr\_decomp.py}. CI = 1.96$\times$SE across the eight per-(asset, model) group means within each category (two for the \SPX{}-only VIX row).
 
 \textit{Source:} Authors' calculations.
 \end{minipage}
