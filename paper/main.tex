@@ -228,7 +228,7 @@ HMM & 0.350 $\pm$ 0.033 & 0.423 $\pm$ 0.028 \\
 
 Rolling-window overlap mechanically inflates temporal ARI: adjacent windows with step $s$ share fraction $(W-s)/W$ of their observations, so short steps produce autocorrelated state sequences even under an i.i.d.\ null. This is a well-known artifact of rolling estimation \citep{vonLuxburg2010}. To quantify how much of the apparent temporal stability reflects overlap rather than genuine regime persistence, we vary step size in $\{21, 63, 126, 252\}$ while keeping the window fixed at 252 business days. Table~\ref{tab:step_sensitivity} reports both the disjoint and overlap temporal ARI (Section~2.5) alongside cross-representation ARI, with mean $\pm$ 95\% CI across assets.
 
-Both temporal metrics decline as step increases, but their levels differ sharply: at a step size of 21 days (92\% overlap) the overlap metric is 0.617 while the disjoint metric is 0.411; the gap of ${\sim}0.21$ quantifies the overlap inflation. The overlap metric drops from 0.617 to 0.490 as the step size increases from 21 to 126 days, and is undefined at a step size of 252 days where windows share no observations. The disjoint metric falls further to 0.140 at a step size of 252 days, but this value should be interpreted with care: at full non-overlap, the disjoint metric compares labels from independently estimated models separated by one calendar year, so low agreement may reflect estimation instability across non-overlapping samples rather than (or in addition to) low regime persistence. Cross-representation ARI, by contrast, remains low and roughly flat at about 0.39 across all step sizes, confirming that representation-driven disagreement is not a product of overlap and persists even when windows are fully non-overlapping.
+Both temporal metrics decline as step increases, but their levels differ sharply: at a step size of 21 days (92\% overlap) the overlap metric is 0.615 while the disjoint metric is 0.408; the gap of ${\sim}0.21$ quantifies the overlap inflation. The overlap metric drops from 0.615 to 0.487 as the step size increases from 21 to 126 days, and is undefined at a step size of 252 days where windows share no observations. The disjoint metric falls further to 0.140 at a step size of 252 days, but this value should be interpreted with care: at full non-overlap, the disjoint metric compares labels from independently estimated models separated by one calendar year, so low agreement may reflect estimation instability across non-overlapping samples rather than (or in addition to) low regime persistence. Cross-representation ARI, by contrast, remains low and roughly flat at about 0.38 across all step sizes, confirming that representation-driven disagreement is not a product of overlap and persists even when windows are fully non-overlapping.
 
 For the \SPX{} during the COVID-19 crash, Supplementary Figure~\ref{fig:rep_conflict} (Appendix~\ref{app:figures}) illustrates the same mechanism visually: two admissible representations assign different state labels over the same interval, with disagreement concentrated in the crisis window. Identical market data can trigger different risk-reduction actions under equally defensible representations, and this arbitrariness is typically invisible to the end user.
 
@@ -242,10 +242,10 @@ For the \SPX{} during the COVID-19 crash, Supplementary Figure~\ref{fig:rep_conf
 \toprule
 Step & Cross-rep.\ ARI & Temporal ARI (disjoint) & Temporal ARI (overlap) \\
 \midrule
-21 & 0.378 $\pm$ 0.029 & 0.408 $\pm$ 0.018 & --- \\
-63 & 0.378 $\pm$ 0.028 & 0.174 $\pm$ 0.028 & --- \\
-126 & 0.379 $\pm$ 0.035 & 0.192 $\pm$ 0.020 & --- \\
-252 & 0.379 $\pm$ 0.038 & 0.140 $\pm$ 0.018 & --- \\
+21  & 0.378 $\pm$ 0.029 & 0.408 $\pm$ 0.018 & 0.615 $\pm$ 0.014 \\
+63  & 0.378 $\pm$ 0.028 & 0.174 $\pm$ 0.028 & 0.540 $\pm$ 0.015 \\
+126 & 0.379 $\pm$ 0.035 & 0.192 $\pm$ 0.020 & 0.487 $\pm$ 0.016 \\
+252 & 0.379 $\pm$ 0.038 & 0.140 $\pm$ 0.018 & n/a \\
 \bottomrule
 \end{tabular}
 \medskip
@@ -300,9 +300,26 @@ The first is \emph{instability}: the representation layer introduces a defect, a
 
 The second is \emph{irreducible plurality}: multiple partitions are equally valid descriptions of a non-stationary process, and no amount of engineering will collapse them to one. Under this reading, low ARI is not a defect but a structural property of the inference problem, and governance should shift from seeking the ``correct'' partition to reporting the \emph{distribution} of plausible partitions and their downstream consequences.
 
-A synthetic experiment provides partial resolution (DGP details in Supplementary Appendix~\ref{app:synth_setup}): if plurality were the cause, each representation should recover the true labels well despite disagreeing with each other. Instead, ARI versus ground truth averages 0.264 (HMM) and 0.273 (GMM), comparable to the cross-representation ARI itself (0.305 and 0.383), so the pipeline fails to recover the true partition even when one exists, consistent with \emph{instability} rather than \emph{plurality}. Appendix~\ref{app:synth_setup} also reports results for lower persistence ($p\in\{0.80,0.90\}$) and $K\in\{2,4\}$; the qualitative conclusion (ARI vs ground truth $\approx$ cross-representation ARI) holds across all DGP configurations, confirming it is not specific to the baseline parameterisation.
+A synthetic experiment provides partial resolution (DGP details in Supplementary Appendix~\ref{app:synth_setup}): if plurality were the cause, each representation should recover the true labels well despite disagreeing with each other. Instead, ARI versus ground truth averages 0.20 (HMM) and 0.21 (GMM), comparable to or below the cross-representation ARI itself (0.24 HMM, 0.28 GMM at the baseline step), so the pipeline fails to recover the true partition even when one exists, consistent with \emph{instability} rather than \emph{plurality}. The result is insensitive to the magnitude of the state-specific drift component: with $\alpha=0$ (no drift) the recovery ARI is essentially unchanged (GMM 0.21, HMM 0.20), so the pipeline's inability to recover the true partition is driven by the volatility-dominated feature space, not by small differences in mean return. Robustness of this conclusion across persistence values $p$ and true state counts $K$ is a natural extension but is not resolved here with a single DGP.
 
 This does not settle the question for real markets, where the DGP is unknown and may not admit a unique partition. But it shifts the prior: the low ARI observed in practice is at least partly attributable to genuine inference failure, not merely to the coexistence of equally valid descriptions. What the results do establish is that \emph{whichever interpretation is adopted, the current practice of reporting a single regime classification without cross-representation sensitivity analysis is inadequate}. If the problem is instability, validation must diagnose it. If the problem is plurality, reporting must communicate it. In either case, cross-representation diagnostics are a necessary complement to conventional temporal validation. This conclusion is consistent with the direction of SR 11-7 \citep{SR117} toward uncertainty-aware reporting, and suggests that regime inference may benefit from the ensemble and decision-theoretic approaches already standard in other domains of financial risk modelling.
+
+\subsection{Robustness and alternative interpretations}
+\label{sec:dialectical}
+
+The central findings are robust in headline terms but warrant dialectical scrutiny on five points where an alternative reading is plausible.
+
+\emph{(i) Threshold choice.} The 0.65 benchmark from \citet{Steinley2004} was calibrated against simulation studies outside finance. A reader skeptical of that specific cut-off can read Table~\ref{tab:baseline}: cross-representation ARI remains at 0.35--0.41 across all models and assets, so even under a substantially looser 0.50 threshold the partition-level finding stands. AMI, which corrects differently for large clusters, produces the same qualitative ranking.
+
+\emph{(ii) Disentangling non-stationarity from estimation noise at large step.} At step~$=252$ (non-overlapping windows), the disjoint temporal ARI of 0.14 could reflect genuine regime non-persistence, estimation instability across independently fitted models separated by one year, or both; the data cannot separate these. We report the value as a lower bound on temporal stability and do not infer non-persistence from it. The cross-representation ARI at step~$=252$ (0.38) is the more informative quantity for this paper's thesis, since it is computed on identical observations.
+
+\emph{(iii) Permutation null inflation is asset-specific.} At $K=3$, the permutation null top-1 reaches 0.976 for BTC-USD (high kurtosis) but only 0.896 for IEF (low kurtosis); the observed values straddle these structurally different baselines. A reader could argue the permutation null is therefore a reasonable diagnostic for assets with near-Gaussian returns (IEF, \SPX{}) even if inflated for heavy-tailed assets (BTC-USD, GLD). The independent null removes this asset-specific inflation and is our preferred baseline; the fact that observed ordering exceeds \emph{both} nulls for \SPX{} and IEF, and exceeds the independent null for BTC-USD and marginally for GLD, is what the governance recommendation relies on.
+
+\emph{(iv) The $\eta^2$ contrast between GMM and HMM.} GMM $\eta^2 \approx 0.32$ versus HMM $\eta^2 \approx 0.21$ does \emph{not} imply that representations matter more for GMM in an absolute sense. The ratio is higher under GMM because GMM is more numerically deterministic (lower seed-level variance in the denominator); the between-pair variance is similar for both models ($0.016$--$0.018$ for GMM vs $0.010$--$0.012$ for HMM). The correct reading is that HMM ARI carries more estimation noise around the same representation-driven signal.
+
+\emph{(v) Synthetic recovery is \emph{suggestive}, not conclusive.} The inability of the pipeline to recover the true partition under a stylized DGP (recovery ARI $\approx 0.20$) is consistent with instability, but we caution against over-interpreting it for three reasons. First, the DGP has expected regime duration $\approx 33$ days while the volatility feature uses a 20-day rolling window; measurement lag alone introduces mis-classification at transitions, which is a finite-sample observability issue rather than a representation-invariance failure. Second, the synthetic class is limited to four of the eight representations (GARCH and VIX are excluded), so class coverage is narrower than the main experiments. Third, we have only tested one DGP configuration ($p=0.97, K=3, T=2{,}200$); a full persistence/$K$ sweep is left as future work (Appendix~\ref{app:synth_setup}). The experiment therefore \emph{weakens} the irreducible-plurality interpretation but does not rule it out, and the governance argument we make in Section~5 is independent of whether instability or plurality is the causal mechanism.
+
+\emph{What would change our conclusion?} The partition-level finding (cross-rep ARI $\ll 0.65$) would be overturned if (a) the admissible class were restricted to specifications that share the same volatility horizon, feature set, and standardization (Table~\ref{tab:decomp} shows feature-subset pairs at 0.55, approaching the 0.65 threshold), or (b) a single representation could be shown to dominate the class on a governance-relevant criterion. Neither is a weakness of the diagnostic itself: restricting the class amounts to declaring one representation canonical, which is precisely the audit failure the diagnostic is designed to surface.
 
 \section{Conclusion}
 
@@ -476,29 +493,26 @@ The GMM reversal at $K=4$ (cross-representation ARI $0.420$ exceeds temporal ARI
 
 The baseline DGP generates $T=2{,}200$ daily observations from a three-state first-order Markov chain with transition persistence $p=0.97$ (probability of staying in the same state). States differ in return drift and volatility: the low-risk state has positive drift ($\mu_1=0.04\%$/day, $\sigma_1=0.5\%$), the medium-risk state is near-flat ($\mu_2=0\%$, $\sigma_2=1.2\%$), and the high-risk state has negative drift ($\mu_3=-0.08\%$, $\sigma_3=2.5\%$). A deterministic drift component ($\alpha=0.6$) modulates the mean slightly to produce realistic-looking price paths. We generate 10 independent DGP seeds and for each seed run 3 independent fit seeds, yielding $30$ realisations per representation. The representation pipeline is applied to four of the eight admissible representations (rep\_a, rep\_a\_unscaled, rep\_b, rep\_c1); the GARCH and VIX specifications are excluded because GARCH fitting on short synthetic samples is prohibitively slow and VIX has no natural synthetic counterpart. Using four representations produces 6 cross-representation pairs per window, sufficient for the qualitative comparison.
 
-\paragraph{DGP robustness sweep.}
-To confirm that the main conclusion (ARI vs.\ ground truth $\approx$ cross-representation ARI) is not specific to the baseline DGP parameterisation, we additionally run the experiment for persistence values $p \in \{0.80, 0.90\}$ and true state counts $K \in \{2, 4\}$ (configured via \texttt{persistence\_sweep} and \texttt{k\_sweep} in \texttt{config.yaml}). Lower persistence ($p=0.80$) produces faster regime cycling, closer to a near-random walk; $p=0.90$ is intermediate. The comparison remains qualitatively the same in all configurations: both the ARI-vs-ground-truth and the cross-representation ARI fall well below 0.65, and they remain within a comparable range of each other. Pipeline rerun will populate the numerical values in Table~\ref{tab:synth_robustness}; current results ($p=0.97, K=3$) are reported in Section~4.4.
+\paragraph{Drift ablation.}
+To confirm that the recovery failure is not an artefact of the drift component, we repeat the experiment with $\alpha = 0$ (drift removed, states differ only in volatility). Recovery ARI is essentially identical in both specifications (Table~\ref{tab:synth_robustness}), establishing that the inability to recover the true partition is driven by the volatility-dominated feature space, not by the small state-specific drift term. A full robustness sweep over persistence $p$ and state counts $K$ would further corroborate this conclusion and is left to the open-sourced pipeline (the \texttt{persistence\_sweep}/\texttt{k\_sweep} hooks in \texttt{config.yaml} are declared but not implemented in \texttt{synthetic\_sanity.py} in this revision).
 
 \begin{table}[!htbp]
 \centering
 \small
 \setlength{\tabcolsep}{4pt}
-\caption{Synthetic experiment robustness: ARI vs ground truth and cross-representation ARI under different DGP persistence values and state counts ($K$). $\dagger$ = to be populated after pipeline rerun with \texttt{synthetic\_sanity.enabled: true}.}
+\caption{Synthetic experiment recovery ARI under the baseline DGP, with and without the deterministic drift component $\alpha$.}
 \label{tab:synth_robustness}
-\begin{tabular}{ccccc}
+\begin{tabular}{lcc}
 \toprule
-$p$ & $K$ & HMM ARI vs GT & GMM ARI vs GT & Cross-rep ARI \\
+Drift $\alpha$ & GMM recovery ARI & HMM recovery ARI \\
 \midrule
-0.97 & 3 & 0.264 & 0.273 & $\approx$0.344 \\
-0.90 & 3 & $\dagger$ & $\dagger$ & $\dagger$ \\
-0.80 & 3 & $\dagger$ & $\dagger$ & $\dagger$ \\
-0.97 & 2 & $\dagger$ & $\dagger$ & $\dagger$ \\
-0.97 & 4 & $\dagger$ & $\dagger$ & $\dagger$ \\
+0.0 & 0.209 $\pm$ 0.005 & 0.201 $\pm$ 0.030 \\
+0.6 & 0.208 $\pm$ 0.002 & 0.204 $\pm$ 0.028 \\
 \bottomrule
 \end{tabular}
 \par\medskip
 \footnotesize
-\textit{Notes:} ARI vs GT = Adjusted Rand Index between inferred states and the true DGP partition, averaged across 30 realisations. Cross-rep ARI = mean pairwise cross-representation ARI across 6 pairs of 4 representations. \textit{Source:} Authors' calculations.
+\textit{Notes:} Recovery ARI = Adjusted Rand Index between inferred states and the true DGP partition, across 5 DGP seeds (mean $\pm$ 95\% CI). $p=0.97, K=3, T=2{,}200$ in both rows; four representations (rep\_a, rep\_a\_unscaled, rep\_b, rep\_c1); from \texttt{outputs/synthetic\_sanity/recovery\_table.csv}. \textit{Source:} Authors' calculations.
 \end{table}
 
 \section{Supplementary Figures}

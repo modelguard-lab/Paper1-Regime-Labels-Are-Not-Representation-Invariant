@@ -153,7 +153,7 @@ grid:
 
 # Optional Appendix artifact: one-page synthetic sanity check (disabled by default).
 synthetic_sanity:
-  enabled: false
+  enabled: true
   # Data-generating process
   T: 2200
   K: 3
