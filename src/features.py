@@ -17,6 +17,7 @@ class RepConfig:
     windows: Dict[str, int | float]
     drop_features: List[str] | None = None
     standardization: Dict[str, int | str] | None = None
+    asset_filter: List[str] | None = None  # None = all assets; non-None = only run for listed tickers
 
 
 def _compute_log_returns(price: pd.Series) -> pd.Series:
@@ -93,6 +94,25 @@ def _compute_garch_vol(returns: pd.Series) -> pd.Series:
         return (_compute_volatility(returns, 20)).rename("garch_vol")
 
 
+def _compute_vix_level(vix: pd.Series, std_window: int = 120) -> pd.Series:
+    """Rolling z-score of VIX level (captures relative implied-vol stress)."""
+    mean = vix.rolling(window=std_window, min_periods=std_window).mean()
+    std = vix.rolling(window=std_window, min_periods=std_window).std()
+    return ((vix - mean) / std).rename("vix_level")
+
+
+def _compute_vix_change(vix: pd.Series, window: int = 5) -> pd.Series:
+    """N-day log-change in VIX (captures direction and speed of fear moves)."""
+    return np.log(vix / vix.shift(window)).rename("vix_change")
+
+
+def _compute_vix_percentile(vix: pd.Series, window: int = 60) -> pd.Series:
+    """Rolling empirical percentile of VIX (0-1; high = extreme stress)."""
+    def _pct(x: np.ndarray) -> float:
+        return float(np.sum(x <= x[-1]) / len(x))
+    return vix.rolling(window=window, min_periods=window).apply(_pct, raw=True).rename("vix_percentile")
+
+
 def _compute_realized_skew(log_returns: pd.Series, window: int) -> pd.Series:
     return log_returns.rolling(window=window, min_periods=window).skew().rename("realized_skew")
 
@@ -116,7 +136,23 @@ def _apply_standardization(df: pd.DataFrame, standardization: Dict[str, int | st
     raise ValueError(f"Unknown standardization mode: {mode}")
 
 
-def build_representation_single(price: pd.Series, rep: RepConfig) -> pd.DataFrame:
+def build_representation_single(
+    price: pd.Series,
+    rep: RepConfig,
+    aux: Dict[str, pd.Series] | None = None,
+) -> pd.DataFrame:
+    """Build a single feature representation.
+
+    Parameters
+    ----------
+    price : pd.Series
+        Adjusted-close price series for the target asset.
+    rep : RepConfig
+        Representation specification.
+    aux : dict, optional
+        Auxiliary series keyed by name (e.g. ``{"^VIX": vix_series}``).
+        Required when ``rep.features`` contains ``vix_*`` features.
+    """
     windows = rep.windows or {}
     vol_window = int(windows.get("vol_window", 20))
     drawdown_window = int(windows.get("drawdown_window", 60))
@@ -124,6 +160,9 @@ def build_representation_single(price: pd.Series, rep: RepConfig) -> pd.DataFram
     tail_alpha = float(windows.get("tail_alpha", 0.05))
     skew_window = int(windows.get("skew_window", 60))
     stability_window = int(windows.get("stability_window", 60))
+    vix_std_window = int(windows.get("vix_std_window", 120))
+    vix_change_window = int(windows.get("vix_change_window", 5))
+    vix_pct_window = int(windows.get("vix_pct_window", 60))
 
     r = _compute_log_returns(price)
     vol = _compute_volatility(r, vol_window).rename("volatility")
@@ -133,11 +172,27 @@ def build_representation_single(price: pd.Series, rep: RepConfig) -> pd.DataFram
     skew = _compute_realized_skew(r, skew_window)
     stab = _compute_stability(vol, stability_window)
 
-    # GARCH conditional vol — only computed when requested (avoids arch import overhead)
     feat_list = [vol, dd, mdd, var, cvar, skew, stab]
+
+    # GARCH conditional vol — only computed when requested (avoids arch import overhead)
     if "garch_vol" in rep.features:
         gvol = _compute_garch_vol(r)
         feat_list.append(gvol)
+
+    # VIX-based features — require aux["^VIX"] to be provided
+    vix_features_needed = {"vix_level", "vix_change", "vix_percentile"}
+    if vix_features_needed.intersection(rep.features):
+        if aux is None or "^VIX" not in aux:
+            raise ValueError(
+                f"Rep '{rep.name}' requires VIX features but aux['^VIX'] was not provided."
+            )
+        vix = aux["^VIX"].reindex(price.index).ffill()
+        if "vix_level" in rep.features:
+            feat_list.append(_compute_vix_level(vix, vix_std_window))
+        if "vix_change" in rep.features:
+            feat_list.append(_compute_vix_change(vix, vix_change_window))
+        if "vix_percentile" in rep.features:
+            feat_list.append(_compute_vix_percentile(vix, vix_pct_window))
 
     all_feats = pd.concat(feat_list, axis=1)
 

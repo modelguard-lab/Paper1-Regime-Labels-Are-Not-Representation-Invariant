@@ -236,7 +236,27 @@ def main() -> None:
         import traceback
         traceback.print_exc()
 
+    # 6) Representation-dimension and variance decomposition.
+    _run_repr_decomp(outputs_dir)
+
+
+def _run_repr_decomp(outputs_dir: Path) -> None:
+    """Run representation-dimension and variance decomposition."""
+    try:
+        from posthoc_repr_decomp import run_decomposition
+        decomp_df, var_df = run_decomposition(outputs_dir)
+        if not decomp_df.empty:
+            decomp_df.to_csv(outputs_dir / "repr_decomp_summary.csv", index=False)
+            logger.info("repr_decomp_summary.csv written (%d rows)", len(decomp_df))
+        if not var_df.empty:
+            var_df.to_csv(outputs_dir / "repr_variance_decomp.csv", index=False)
+            logger.info("repr_variance_decomp.csv written (%d rows)", len(var_df))
+    except Exception:
+        logger.exception("posthoc_figs: representation decomposition failed.")
+
 
 if __name__ == "__main__":
     main()
+    outputs_dir = Path(__file__).resolve().parent.parent / "outputs"
+    _run_repr_decomp(outputs_dir)
 

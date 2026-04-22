@@ -133,12 +133,15 @@ def compute_var_spread(
 
             if roll_spreads:
                 mean_sp = float(np.mean(roll_spreads))
+                max_sp = float(np.max(roll_spreads))
                 row = {
                     "asset": asset,
                     "model": model,
                     "mean_spread_pp": mean_sp * 100,
+                    "max_spread_pp": max_sp * 100,
                     "overall_cvar_pp": overall_cvar * 100,
                     "spread_pct_of_cvar": mean_sp / overall_cvar * 100,
+                    "max_spread_pct_of_cvar": max_sp / overall_cvar * 100,
                     "n_rolls": len(roll_spreads),
                 }
                 for sp_name in STRESS_PERIODS:

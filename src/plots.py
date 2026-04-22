@@ -248,115 +248,78 @@ def plot_representation_failure_matrix(
             extra_dd = float(dd_full.max())
 
     # =========================================================================
-    # Figure 1: Conflict view (Paper 1)
+    # Figure 1: Conflict view — two subplots
+    #   Top (3/4 height): price line + two state-band strips
+    #   Bottom (1/4 height): binary conflict indicator
     # =========================================================================
-    fig_conf, ax = plt.subplots(figsize=(6.4, 3.6), dpi=300)
+    fig_conf, (ax_top, ax_bot) = plt.subplots(
+        2, 1, figsize=(6.4, 4.2), dpi=300,
+        gridspec_kw={"height_ratios": [3, 1]},
+        sharex=True,
+    )
 
-    ax.plot(price_win.index, price_win.values, color="black", linewidth=1.2, zorder=3)
-    ax.set_title(title_left, fontsize=11)
-    ax.set_xlabel("Date")
-    ax.set_ylabel(price.name or "Price")
-    ax.set_axisbelow(True)
-    ax.grid(True, alpha=0.25, linewidth=0.6)
+    # --- Top panel: price ---
+    ax_top.plot(price_win.index, price_win.values, color="black", linewidth=1.2, zorder=3)
+    ax_top.set_title(title_left, fontsize=10)
+    ax_top.set_ylabel(price.name or "Price", fontsize=9)
+    ax_top.set_axisbelow(True)
+    ax_top.grid(True, alpha=0.20, linewidth=0.5)
 
-    # Bands: keep them thin, separated, and behind price
+    # State bands drawn as thin horizontal strips within the top axes (axes fraction).
+    # rep_a: upper strip; rep_c1: lower strip — separated so neither overlaps price line.
     _draw_state_band_no_legend(
-        ax=ax,
+        ax=ax_top,
         idx=common_idx,
         states=s_a.to_numpy(),
         label_map=label_map_a,
-        ymin=0.72,
-        ymax=0.82,
-        alpha=0.40,
+        ymin=0.88,
+        ymax=0.96,
+        alpha=0.55,
         palette="returns",
     )
     _draw_state_band_no_legend(
-        ax=ax,
+        ax=ax_top,
         idx=common_idx,
         states=s_b.to_numpy(),
         label_map=label_map_b,
-        ymin=0.56,
-        ymax=0.66,
-        alpha=0.35,
+        ymin=0.78,
+        ymax=0.86,
+        alpha=0.55,
         palette="risk",
     )
 
-    # Conflict strip (independent visual language)
-    # Base white strip
-    ax.axvspan(
-        common_idx[0],
-        common_idx[-1],
-        ymin=0.46,
-        ymax=0.52,
-        facecolor="white",
-        edgecolor="none",
-        alpha=0.95,
-        zorder=2,
-    )
-
-    if conflict_mask.any():
-        in_zone = False
-        seg_start = None
-        for t, is_conflict in zip(common_idx, conflict_mask):
-            if is_conflict and not in_zone:
-                in_zone = True
-                seg_start = t
-            elif (not is_conflict) and in_zone:
-                ax.axvspan(
-                    seg_start,
-                    t,
-                    ymin=0.46,
-                    ymax=0.52,
-                    facecolor="#ffec99",
-                    edgecolor="black",
-                    linewidth=0.5,
-                    alpha=0.95,
-                    zorder=4,
-                )
-                in_zone = False
-                seg_start = None
-        if in_zone and seg_start is not None:
-            ax.axvspan(
-                seg_start,
-                common_idx[-1],
-                ymin=0.46,
-                ymax=0.52,
-                facecolor="#ffec99",
-                edgecolor="black",
-                linewidth=0.5,
-                alpha=0.95,
-                zorder=4,
-            )
-
-    # --- Grouped legend (3 blocks) ---
+    # Compact legend for the state bands
     legend_elements = [
-        Patch(facecolor="none", edgecolor="none", label="rep_a"),
-        Patch(
-            facecolor=_color_for_level("on", "returns"),
-            edgecolor="none",
-            label=" low-risk",
-        ),
-        Patch(
-            facecolor=_color_for_level("off", "returns"),
-            edgecolor="none",
-            label=" high-risk",
-        ),
-        Patch(facecolor="none", edgecolor="none", label="rep_c1"),
-        Patch(
-            facecolor=_color_for_level("on", "risk"),
-            edgecolor="none",
-            label=" low-risk",
-        ),
-        Patch(
-            facecolor=_color_for_level("off", "risk"),
-            edgecolor="none",
-            label=" high-risk",
-        ),
-        Patch(facecolor="#ffec99", edgecolor="black", label="Conflict"),
+        Patch(facecolor="none", edgecolor="none", label="rep_a (upper):"),
+        Patch(facecolor=_color_for_level("on", "returns"), edgecolor="none", label=" low-risk"),
+        Patch(facecolor=_color_for_level("off", "returns"), edgecolor="none", label=" high-risk"),
+        Patch(facecolor="none", edgecolor="none", label="rep_c1 (lower):"),
+        Patch(facecolor=_color_for_level("on", "risk"), edgecolor="none", label=" low-risk"),
+        Patch(facecolor=_color_for_level("off", "risk"), edgecolor="none", label=" high-risk"),
     ]
-    ax.legend(handles=legend_elements, loc="upper right", fontsize=6, framealpha=0.6)
+    ax_top.legend(handles=legend_elements, loc="upper left", fontsize=6,
+                  framealpha=0.7, ncol=2, columnspacing=0.4)
 
-    fig_conf.tight_layout()
+    # --- Bottom panel: conflict indicator as filled step function ---
+    conflict_series = conflict_mask.astype(float)
+    ax_bot.fill_between(
+        common_idx,
+        conflict_series,
+        step="mid",
+        color="#C0392B",
+        alpha=0.60,
+        linewidth=0,
+        label="Conflict",
+    )
+    ax_bot.set_ylim(-0.05, 1.35)
+    ax_bot.set_yticks([0, 1])
+    ax_bot.set_yticklabels(["agree", "conflict"], fontsize=7)
+    ax_bot.set_xlabel("Date", fontsize=9)
+    ax_bot.grid(True, axis="x", alpha=0.20, linewidth=0.5)
+    ax_bot.spines["top"].set_visible(False)
+    ax_bot.spines["right"].set_visible(False)
+
+    fig_conf.subplots_adjust(hspace=0.08)
     conflict_path.parent.mkdir(parents=True, exist_ok=True)
     fig_conf.savefig(conflict_path, bbox_inches="tight", dpi=300)
     plt.close(fig_conf)

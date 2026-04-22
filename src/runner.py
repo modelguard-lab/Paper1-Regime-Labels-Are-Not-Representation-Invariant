@@ -11,6 +11,7 @@ import warnings
 from pathlib import Path
 from typing import Dict, List, Tuple
 
+# Resolves to src/runtime.py, not src/core/runtime.py (core/ is a legacy stub).
 from runtime import set_thread_env_defaults
 from runtime import configure_console_logging
 from runtime import configure_global_file_logging
@@ -53,42 +54,61 @@ def _parallel_or_sequential(func, args_list, n_jobs, label="parallel"):
     import traceback as _tb
     t0 = _t.perf_counter()
     n_tasks = len(args_list)
-    effective = min(n_jobs if n_jobs > 0 else 12, 12, n_tasks)
+    # Analysis tasks pass large per-task dicts (hard_map shards) that must be pickled once
+    # per worker.  At n_jobs > ~8, pickle overhead + concurrent MKL init on Windows
+    # triggers TerminatedWorkerError.  Cap at 8 for stability; each task takes seconds,
+    # so 8-way parallelism is sufficient (5x speedup vs sequential, which is what matters).
+    analysis_cap = 8
+    effective = min(n_jobs if n_jobs > 0 else 4, n_tasks, analysis_cap)
 
     if effective <= 1 or n_tasks <= 2:
         results = [func(*a) for a in args_list]
         logger.info("%s: done in %.1fs (sequential, %d tasks)", label, _t.perf_counter() - t0, n_tasks)
         return results
 
-    logger.info("%s: starting parallel; %d tasks, n_jobs=%d", label, n_tasks, effective)
+    logger.info("%s: starting parallel; %d tasks, n_jobs=%d (backend=loky)", label, n_tasks, effective)
     try:
-        # Use initializer to force MKL single-thread in each worker
-        results = Parallel(
-            n_jobs=effective,
-            backend="loky",
-        )(
-            delayed(func)(*a) for a in args_list
-        )
-        logger.info("%s: done in %.1fs (parallel, %d tasks, n_jobs=%d)", label, _t.perf_counter() - t0, n_tasks, effective)
+        # loky with mmap of large args + inner_max_num_threads=1 avoids MKL crashes.
+        from joblib import parallel_config as _parallel_config
+        with _parallel_config(backend="loky", n_jobs=effective, inner_max_num_threads=1):
+            results = Parallel(max_nbytes="50M", mmap_mode="r")(
+                delayed(func)(*a) for a in args_list
+            )
+        logger.info("%s: done in %.1fs (parallel loky, %d tasks, n_jobs=%d)", label, _t.perf_counter() - t0, n_tasks, effective)
         return results
     except TerminatedWorkerError:
-        logger.error(
-            "%s: TerminatedWorkerError with n_jobs=%d, %d tasks. "
-            "This is typically caused by MKL memory corruption in loky workers on Windows. "
-            "Falling back to sequential execution.",
-            label, effective, n_tasks,
-        )
+        # Halve workers and retry once with loky before falling through to threading.
+        retry_jobs = max(2, effective // 2)
+        logger.warning("%s: TerminatedWorkerError at n_jobs=%d; retrying with n_jobs=%d.", label, effective, retry_jobs)
+        t0 = _t.perf_counter()
+        try:
+            from joblib import parallel_config as _parallel_config
+            with _parallel_config(backend="loky", n_jobs=retry_jobs, inner_max_num_threads=1):
+                results = Parallel(max_nbytes="50M", mmap_mode="r")(
+                    delayed(func)(*a) for a in args_list
+                )
+            logger.info("%s: done in %.1fs (loky retry at n_jobs=%d, %d tasks)", label, _t.perf_counter() - t0, retry_jobs, n_tasks)
+            return results
+        except Exception:
+            logger.warning("%s: loky retry also failed; falling back to threading.", label)
+        t0 = _t.perf_counter()
+        try:
+            results = Parallel(n_jobs=effective, backend="threading")(
+                delayed(func)(*a) for a in args_list
+            )
+            logger.info("%s: done in %.1fs (threading fallback, %d tasks)", label, _t.perf_counter() - t0, n_tasks)
+            return results
+        except Exception:
+            pass
         t0 = _t.perf_counter()
         results = [func(*a) for a in args_list]
-        logger.info("%s: done in %.1fs (sequential fallback after TerminatedWorkerError, %d tasks)",
-                    label, _t.perf_counter() - t0, n_tasks)
+        logger.info("%s: done in %.1fs (sequential final fallback, %d tasks)", label, _t.perf_counter() - t0, n_tasks)
         return results
     except Exception as e:
         logger.error(
-            "%s: unexpected error in parallel execution: %s\n%s",
+            "%s: parallel error (%s); falling back to sequential.\n%s",
             label, e, _tb.format_exc(),
         )
-        logger.info("%s: falling back to sequential", label)
         t0 = _t.perf_counter()
         results = [func(*a) for a in args_list]
         logger.info("%s: done in %.1fs (sequential fallback, %d tasks)", label, _t.perf_counter() - t0, n_tasks)
@@ -194,6 +214,7 @@ def _build_rep_configs(cfg: Dict) -> List[RepConfig]:
                 windows=rep.get("windows", {}) or {},
                 drop_features=rep.get("drop_features", None),
                 standardization=rep.get("standardization", None),
+                asset_filter=rep.get("asset_filter", None),
             )
         )
     if not reps:
@@ -688,7 +709,7 @@ def _compute_rep_stability_from_map(
     import time as _time
 
     tasks = [(m, s) for m in models for s in seeds]
-    effective_jobs = min(n_jobs if n_jobs > 0 else 12, 12, len(tasks))
+    effective_jobs = min(n_jobs if n_jobs > 0 else 4, len(tasks))
 
     logger.info("Rep stability: %d tasks, n_jobs=%d", len(tasks), effective_jobs)
     t0 = _time.perf_counter()
@@ -757,7 +778,7 @@ def _compute_window_stability_from_map(
     import time as _time
 
     tasks = [(rep, m, s) for rep in rep_names for m in models for s in seeds]
-    effective_jobs = min(n_jobs if n_jobs > 0 else 12, 12, len(tasks))
+    effective_jobs = min(n_jobs if n_jobs > 0 else 4, len(tasks))
 
     logger.info("Window stability: %d tasks, n_jobs=%d", len(tasks), effective_jobs)
     t0 = _time.perf_counter()
@@ -871,7 +892,7 @@ def _compute_semantic_crossrep_wasserstein_from_map(
     import time as _time
 
     tasks = [(m, s) for m in models for s in seeds]
-    effective_jobs = min(n_jobs if n_jobs > 0 else 12, 12, len(tasks))
+    effective_jobs = min(n_jobs if n_jobs > 0 else 4, len(tasks))
     logger.info("Semantic cross-rep: %d tasks, n_jobs=%d", len(tasks), effective_jobs)
     t0 = _time.perf_counter()
 
@@ -926,7 +947,7 @@ def _compute_semantic_temporal_wasserstein_from_map(
     import time as _time
 
     tasks = [(rep, m, s) for rep in rep_names for m in models for s in seeds]
-    effective_jobs = min(n_jobs if n_jobs > 0 else 12, 12, len(tasks))
+    effective_jobs = min(n_jobs if n_jobs > 0 else 4, len(tasks))
     logger.info("Semantic temporal: %d tasks, n_jobs=%d", len(tasks), effective_jobs)
     t0 = _time.perf_counter()
 
@@ -1212,7 +1233,7 @@ def _compute_ordering_consistency_crossrep_seed_summary(
     import time as _time
 
     tasks = [(m, s) for m in models for s in seeds]
-    effective_jobs = min(n_jobs if n_jobs > 0 else 12, 12, len(tasks))
+    effective_jobs = min(n_jobs if n_jobs > 0 else 4, len(tasks))
 
     # Pre-shard hard_map so each worker only receives its own slice
     logger.info("Ordering cross-rep: sharding hard_map for %d tasks, n_jobs=%d", len(tasks), effective_jobs)
@@ -1229,6 +1250,50 @@ def _compute_ordering_consistency_crossrep_seed_summary(
 
     args = [(m, s, shards[(m, s)], returns, rep_names, k, window, rolls, alpha) for m, s in tasks]
     return list(_parallel_or_sequential(_ordering_one_seed, args, effective_jobs, "Ordering cross-rep"))
+
+
+def _ordering_independent_null_distribution(
+    returns: pd.Series,
+    states: pd.Series,
+    n_states: int,
+    n_perm: int = 500,
+    seed: int = 43,
+    alpha: float = 0.05,
+) -> Dict[str, float]:
+    """Ordering metrics under two independently generated random K-partitions.
+
+    Unlike the permutation null (which permutes one side against the structured
+    original), this null generates BOTH sequences as independent uniform random
+    K-partitions so the Hungarian optimiser cannot exploit pre-existing structure
+    on one side.  Expected indep-null top-1 ≈ 1/K; Spearman ≈ 0, making it a
+    proper test of whether observed ordering exceeds a symmetric chance level.
+    """
+    rng = np.random.default_rng(seed)
+    dates = states.dropna().index
+    T = len(dates)
+
+    top1s: List[float] = []
+    spearmans: List[float] = []
+    for _ in range(n_perm):
+        labels_a = pd.Series(rng.integers(0, n_states, size=T), index=dates)
+        labels_b = pd.Series(rng.integers(0, n_states, size=T), index=dates)
+        samples_a = _state_return_samples(returns, labels_a, n_states)
+        prof_a = _risk_profiles_by_state(samples_a, alpha=alpha)
+        samples_b = _state_return_samples(returns, labels_b, n_states)
+        prof_b = _risk_profiles_by_state(samples_b, alpha=alpha)
+        m = _matched_ordering_metrics(prof_a, prof_b)
+        if math.isfinite(m["top1_consistency"]):
+            top1s.append(m["top1_consistency"])
+        if math.isfinite(m["spearman"]):
+            spearmans.append(m["spearman"])
+
+    return {
+        "indep_null_top1_mean": float(np.mean(top1s)) if top1s else float("nan"),
+        "indep_null_top1_p95": float(np.percentile(top1s, 95)) if top1s else float("nan"),
+        "indep_null_spearman_mean": float(np.mean(spearmans)) if spearmans else float("nan"),
+        "indep_null_spearman_p95": float(np.percentile(spearmans, 95)) if spearmans else float("nan"),
+        "indep_null_n": len(top1s),
+    }
 
 
 def _compute_ordering_null_baseline(
@@ -1255,13 +1320,22 @@ def _compute_ordering_null_baseline(
                 for rep in rep_names:
                     s = hard_map.get((rep, model_name, int(seed), str(roll)))
                     if s is not None and len(s.dropna()) >= 20:
-                        result = _ordering_null_distribution(
+                        perm = _ordering_null_distribution(
                             returns, s, k, n_perm=n_perm, seed=42, alpha=alpha,
                         )
+                        indep = _ordering_independent_null_distribution(
+                            returns, s, k, n_perm=n_perm, seed=43, alpha=alpha,
+                        )
+                        result = {**perm, **indep}
                         logger.info(
-                            "Ordering null baseline (K=%d): top1_mean=%.3f, spearman_mean=%.3f "
-                            "(n_perm=%d)",
-                            k, result["null_top1_mean"], result["null_spearman_mean"], n_perm,
+                            "Ordering null baseline (K=%d): perm top1=%.3f indep top1=%.3f "
+                            "perm sp=%.3f indep sp=%.3f (n_perm=%d)",
+                            k,
+                            result["null_top1_mean"],
+                            result.get("indep_null_top1_mean", float("nan")),
+                            result["null_spearman_mean"],
+                            result.get("indep_null_spearman_mean", float("nan")),
+                            n_perm,
                         )
                         return result
     return {
@@ -1270,6 +1344,11 @@ def _compute_ordering_null_baseline(
         "null_spearman_mean": float("nan"),
         "null_spearman_p95": float("nan"),
         "null_n": 0,
+        "indep_null_top1_mean": float("nan"),
+        "indep_null_top1_p95": float("nan"),
+        "indep_null_spearman_mean": float("nan"),
+        "indep_null_spearman_p95": float("nan"),
+        "indep_null_n": 0,
     }
 
 
@@ -1368,7 +1447,7 @@ def _compute_ordering_consistency_temporal_seed_summary(
     from joblib import Parallel, delayed
 
     tasks = [(m, s) for m in models for s in seeds]
-    effective_jobs = min(n_jobs if n_jobs > 0 else 12, 12, len(tasks))
+    effective_jobs = min(n_jobs if n_jobs > 0 else 4, len(tasks))
 
     shards = {}
     for m, s in tasks:
@@ -2003,11 +2082,38 @@ def _run_single_asset(
             str(price.index.max()),
         )
 
+    # Filter representations by asset_filter and apply to current asset.
+    reps = [r for r in reps if r.asset_filter is None or asset in r.asset_filter]
+    if not reps:
+        logger.warning("[%s] No representations applicable for this asset; skipping.", asset)
+        return float(time.perf_counter() - t_asset0)
+
+    # Load auxiliary series (e.g. ^VIX) for any reps that need them.
+    vix_features = {"vix_level", "vix_change", "vix_percentile"}
+    aux: Dict[str, pd.Series] = {}
+    if any(vix_features.intersection(r.features) for r in reps):
+        data_cfg = cfg.get("data", {}) if isinstance(cfg.get("data", {}), dict) else {}
+        vix_missing = not (raw_dir / "VIX.csv").exists()
+        if vix_missing:
+            logger.info("[%s] Downloading ^VIX for VIX-based representation.", asset)
+            download_tickers(
+                ["^VIX"],
+                output_dir=raw_dir,
+                start_date=str(data_cfg.get("start_date", "2005-01-01")),
+                end_date=str(data_cfg.get("end_date")) if data_cfg.get("end_date") else None,
+            )
+        vix_prices = load_prices(["^VIX"], raw_dir, price_col=None)
+        if "^VIX" in vix_prices:
+            aux["^VIX"] = vix_prices["^VIX"]
+        else:
+            logger.warning("[%s] ^VIX could not be loaded; skipping VIX-based reps.", asset)
+            reps = [r for r in reps if not vix_features.intersection(r.features)]
+
     # Build all representations once, then align to a common post-warmup index.
     X_by_rep: Dict[str, pd.DataFrame] = {}
     first_valid: Dict[str, pd.Timestamp] = {}
     for rep in reps:
-        X_raw = build_representation_single(price, rep)
+        X_raw = build_representation_single(price, rep, aux=aux if aux else None)
         if X_raw.empty:
             raise ValueError(f"Empty features for rep={rep.name}")
         X_raw = X_raw.replace([np.inf, -np.inf], np.nan)
@@ -2711,25 +2817,108 @@ def run(config_path: Path) -> None:
         logger.info("Run complete; total_elapsed_s=%.1f (%s)", elapsed_run, _fmt_hms(elapsed_run))
 
 
+def _step_sweep_asset_worker(args_tuple):
+    """Module-level worker for ProcessPoolExecutor; runs one (asset, step) combo.
+
+    Each call lives in a freshly spawned Python process, so joblib loky inside
+    is fully independent (no nested-loky downgrade to threading).
+    """
+    asset, cfg, outputs_dir_str, step, inner_jobs, log_path_str = args_tuple
+    import copy
+    outputs_dir_local = Path(outputs_dir_str)
+    log_path_local = Path(log_path_str)
+    try:
+        configure_global_file_logging(log_path_local)
+    except Exception:
+        pass
+    cfg_copy = copy.deepcopy(cfg)
+    cfg_copy["grid"] = cfg_copy.get("grid") or {}
+    cfg_copy["grid"]["step"] = int(step)
+    cfg_copy["grid"]["n_jobs"] = int(inner_jobs)
+    out_dir = outputs_dir_local / safe_name(asset) / f"step_{int(step)}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    return float(_run_single_asset(asset, cfg_copy, outputs_dir_local, out_dir_override=out_dir))
+
+
+def _robustness_asset_worker(args_tuple):
+    """Module-level worker for ProcessPoolExecutor; runs one (asset, K) combo."""
+    asset, cfg, outputs_dir_str, k, inner_jobs, log_path_str = args_tuple
+    import copy
+    outputs_dir_local = Path(outputs_dir_str)
+    log_path_local = Path(log_path_str)
+    try:
+        configure_global_file_logging(log_path_local)
+    except Exception:
+        pass
+    cfg_copy = copy.deepcopy(cfg)
+    cfg_copy["grid"] = cfg_copy.get("grid") or {}
+    cfg_copy["grid"]["n_states"] = [int(k)]
+    cfg_copy["grid"]["n_jobs"] = int(inner_jobs)
+    out_dir = outputs_dir_local / safe_name(asset) / "robustness" / f"K_{int(k)}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    return float(_run_single_asset(asset, cfg_copy, outputs_dir_local, out_dir_override=out_dir))
+
+
 def _run_step_sweep(cfg: Dict, assets: List[str], outputs_dir: Path, steps: List[int]) -> None:
     """Run pipeline for each step in steps; asset-first layout; write step_sweep_summary.csv and ari_vs_step.png."""
+    import copy as _copy
+    from concurrent.futures import ProcessPoolExecutor, as_completed
+    import multiprocessing as _mp
     t0 = time.perf_counter()
     logger.info("Starting step sweep; assets=%s steps=%s", ",".join(assets), steps)
 
     cfg["grid"] = cfg.get("grid") or {}
+    n_jobs_total = int(cfg["grid"].get("n_jobs", 1))
+    n_asset_workers = max(1, int(cfg["grid"].get("n_asset_workers", 1)))
+    inner_jobs = max(1, n_jobs_total // n_asset_workers)
+    if n_asset_workers > 1:
+        logger.info(
+            "Step sweep: ProcessPool outer parallelism n_asset_workers=%d inner_jobs=%d (total=%d)",
+            n_asset_workers, inner_jobs, n_asset_workers * inner_jobs,
+        )
+
     summary_rows: List[Dict] = []
     totals_by_asset: Dict[str, float] = {}
     totals_by_step: Dict[str, float] = {}
+    log_path_str = str(outputs_dir / "run.log")
+    outputs_dir_str = str(outputs_dir)
+
+    def _run_one_asset(asset: str, step: int) -> float:
+        cfg_copy = _copy.deepcopy(cfg)
+        cfg_copy["grid"]["step"] = int(step)
+        cfg_copy["grid"]["n_jobs"] = inner_jobs
+        out_dir = outputs_dir / safe_name(asset) / f"step_{int(step)}"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        logger.info("Step sweep: asset=%s step=%d -> %s", asset, int(step), out_dir)
+        return _run_single_asset(asset, cfg_copy, outputs_dir, out_dir_override=out_dir)
 
     for step in steps:
-        cfg["grid"]["step"] = int(step)
         t_step0 = time.perf_counter()
-        for asset in assets:
-            out_dir = outputs_dir / safe_name(asset) / f"step_{int(step)}"
-            out_dir.mkdir(parents=True, exist_ok=True)
-            logger.info("Step sweep: asset=%s step=%d -> %s", asset, int(step), out_dir)
-            elapsed = _run_single_asset(asset, cfg, outputs_dir, out_dir_override=out_dir)
-            totals_by_asset[safe_name(asset)] = totals_by_asset.get(safe_name(asset), 0.0) + float(elapsed)
+        if n_asset_workers > 1:
+            args_list = [
+                (asset, cfg, outputs_dir_str, int(step), int(inner_jobs), log_path_str)
+                for asset in assets
+            ]
+            ctx = _mp.get_context("spawn")
+            elapsed_by_asset: Dict[str, float] = {}
+            with ProcessPoolExecutor(max_workers=n_asset_workers, mp_context=ctx) as executor:
+                futures = {executor.submit(_step_sweep_asset_worker, a): a[0] for a in args_list}
+                for fut in as_completed(futures):
+                    asset = futures[fut]
+                    try:
+                        elapsed = float(fut.result())
+                    except Exception:
+                        logger.exception("Step sweep worker failed for asset=%s step=%d", asset, int(step))
+                        elapsed = 0.0
+                    elapsed_by_asset[safe_name(asset)] = elapsed
+                    logger.info("Step sweep: asset=%s step=%d done in %.1fs", asset, int(step), elapsed)
+            for asset in assets:
+                key = safe_name(asset)
+                totals_by_asset[key] = totals_by_asset.get(key, 0.0) + float(elapsed_by_asset.get(key, 0.0))
+        else:
+            for asset in assets:
+                elapsed = _run_one_asset(asset, step)
+                totals_by_asset[safe_name(asset)] = totals_by_asset.get(safe_name(asset), 0.0) + float(elapsed)
         for asset in assets:
             p = outputs_dir / safe_name(asset) / f"step_{int(step)}" / "key_results.csv"
             m = _extract_metrics_from_key_results(p)
@@ -2787,22 +2976,63 @@ def _run_robustness_sweep(cfg: Dict, assets: List[str], outputs_dir: Path, robus
     t0 = time.perf_counter()
     logger.info("Starting robustness sweep; step=%d K=%s seeds=%d", step, ks, len(seeds))
 
+    import copy as _copy
     cfg["grid"] = cfg.get("grid") or {}
     cfg["grid"]["step"] = step
     cfg["grid"]["seeds"] = seeds
 
+    n_jobs_total = int(cfg["grid"].get("n_jobs", 1))
+    n_asset_workers = max(1, int(cfg["grid"].get("n_asset_workers", 1)))
+    inner_jobs = max(1, n_jobs_total // n_asset_workers)
+    if n_asset_workers > 1:
+        logger.info(
+            "Robustness sweep: asset-level parallelism n_asset_workers=%d inner_jobs=%d",
+            n_asset_workers, inner_jobs,
+        )
+
+    def _run_one_asset_k(asset: str, k: int) -> float:
+        cfg_copy = _copy.deepcopy(cfg)
+        cfg_copy["grid"]["n_states"] = [int(k)]
+        cfg_copy["grid"]["n_jobs"] = inner_jobs
+        out_dir = outputs_dir / safe_name(asset) / "robustness" / f"K_{int(k)}"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        logger.info("Robustness: asset=%s K=%d -> %s", asset, int(k), out_dir)
+        return _run_single_asset(asset, cfg_copy, outputs_dir, out_dir_override=out_dir)
+
     # Run K sweep (each K runs all seeds internally)
+    from concurrent.futures import ProcessPoolExecutor, as_completed
+    import multiprocessing as _mp
+    log_path_str = str(outputs_dir / "run.log")
+    outputs_dir_str = str(outputs_dir)
     totals_by_asset: Dict[str, float] = {}
     totals_by_k: Dict[str, float] = {}
     for k in ks:
-        cfg["grid"]["n_states"] = [int(k)]
         t_k0 = time.perf_counter()
-        for asset in assets:
-            out_dir = outputs_dir / safe_name(asset) / "robustness" / f"K_{int(k)}"
-            out_dir.mkdir(parents=True, exist_ok=True)
-            logger.info("Robustness: asset=%s K=%d -> %s", asset, int(k), out_dir)
-            elapsed = _run_single_asset(asset, cfg, outputs_dir, out_dir_override=out_dir)
-            totals_by_asset[safe_name(asset)] = totals_by_asset.get(safe_name(asset), 0.0) + float(elapsed)
+        if n_asset_workers > 1:
+            args_list = [
+                (asset, cfg, outputs_dir_str, int(k), int(inner_jobs), log_path_str)
+                for asset in assets
+            ]
+            ctx = _mp.get_context("spawn")
+            elapsed_by_asset: Dict[str, float] = {}
+            with ProcessPoolExecutor(max_workers=n_asset_workers, mp_context=ctx) as executor:
+                futures = {executor.submit(_robustness_asset_worker, a): a[0] for a in args_list}
+                for fut in as_completed(futures):
+                    asset = futures[fut]
+                    try:
+                        elapsed = float(fut.result())
+                    except Exception:
+                        logger.exception("Robustness worker failed for asset=%s K=%d", asset, int(k))
+                        elapsed = 0.0
+                    elapsed_by_asset[safe_name(asset)] = elapsed
+                    logger.info("Robustness: asset=%s K=%d done in %.1fs", asset, int(k), elapsed)
+            for asset in assets:
+                key = safe_name(asset)
+                totals_by_asset[key] = totals_by_asset.get(key, 0.0) + float(elapsed_by_asset.get(key, 0.0))
+        else:
+            for asset in assets:
+                elapsed = _run_one_asset_k(asset, k)
+                totals_by_asset[safe_name(asset)] = totals_by_asset.get(safe_name(asset), 0.0) + float(elapsed)
         totals_by_k[f"K_{int(k)}"] = float(time.perf_counter() - t_k0)
 
     # Aggregate per-seed means from stability_summary.csv
@@ -3090,6 +3320,32 @@ def _run_robustness_sweep(cfg: Dict, assets: List[str], outputs_dir: Path, robus
             for s, n in zip(ordering_grouped["std"].astype(float), ordering_grouped["n_seeds"].astype(int))
         ]
         ordering_grouped.to_csv(outputs_dir / "ordering_ci_summary.csv", index=False)
+
+        # Aggregate per-K independent null values from each asset/K subdirectory.
+        import json as _json
+        null_rows_k: List[Dict] = []
+        for asset in assets:
+            for k in ks:
+                null_path = (
+                    outputs_dir / safe_name(asset) / "robustness" / f"K_{int(k)}"
+                    / "plots" / "ordering_null_baseline.json"
+                )
+                if not null_path.exists():
+                    continue
+                try:
+                    nb = _json.loads(null_path.read_text())
+                except Exception:
+                    continue
+                null_rows_k.append({
+                    "asset": safe_name(asset),
+                    "K": int(k),
+                    "null_top1_mean": nb.get("null_top1_mean"),
+                    "null_spearman_mean": nb.get("null_spearman_mean"),
+                    "indep_null_top1_mean": nb.get("indep_null_top1_mean"),
+                    "indep_null_spearman_mean": nb.get("indep_null_spearman_mean"),
+                })
+        if null_rows_k:
+            pd.DataFrame(null_rows_k).to_csv(outputs_dir / "ordering_null_by_k.csv", index=False)
 
         # Plot: per-asset subplots across K (HMM vs GMM), for Top1 and Spearman.
         try:

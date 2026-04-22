@@ -85,6 +85,24 @@ representations:
       mode: "rolling_zscore"
       window: 120
 
+  # Structurally heterogeneous representation: market-implied volatility (VIX)
+  # replaces all realised/GARCH estimators.  VIX captures risk-premium and
+  # forward-looking fear rather than backward-looking realised risk, making it
+  # genuinely different in economic content.  Only available for ^GSPC (VIX
+  # is the S&P 500 implied vol index).
+  rep_e:
+    features: ["vix_level", "vix_change", "vix_percentile", "cvar"]
+    windows:
+      tail_window: 60
+      tail_alpha: 0.05
+      vix_std_window: 120
+      vix_change_window: 5
+      vix_pct_window: 60
+    standardization:
+      mode: "rolling_zscore"
+      window: 120
+    asset_filter: ["^GSPC"]
+
 models:
   hmm:
     enabled: true
@@ -111,12 +129,27 @@ grid:
   # This uses "seeds as independent repeats" (not pair counts).
   robustness:
     enabled: true
-    # Speed: cover a reasonable K range without exploding runtime.
-    n_states: [2, 3, 4]
+    # K=5 added to test whether ordering exceeds independent null at higher resolution.
+    n_states: [2, 3, 4, 5]
     seeds: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
     step: 21
-  # Tune based on your machine; too high may cause overload/BSOD on some systems
-  n_jobs: 18
+  # Inner parallelism: fits use loky (separate processes, true CPU parallelism for EM).
+  # Proven-stable config: sequential outer + full inner loky.
+  #
+  # History:
+  #   - threading backend: 1.8% CPU (GIL-bound on hmmlearn EM) — FAILED
+  #   - sequential outer + 24 inner loky: 69% CPU, ~8 min/asset — STABLE
+  #   - 4 outer × 6 inner via ProcessPoolExecutor: 100% CPU but BSOD'd Windows
+  #   - 2 outer × 8 inner via ProcessPoolExecutor: step=21 analysis triggered
+  #     BrokenProcessPool (nested-spawn + heavy shards exceeds Windows's tolerance)
+  n_jobs: 24
+  # Outer asset parallelism disabled — nested ProcessPoolExecutor+loky on Windows
+  # fails reliably in the analysis phase for step=21 (large shards).
+  n_asset_workers: 1
+  # Fit-task backend: loky (process-based) — required for true parallelism on EM.
+  # Analysis tasks (ARI/Spearman, numpy-heavy) use threading internally (see
+  # `_parallel_or_sequential` in runner.py) to avoid loky/MKL crashes on Windows.
+  parallel_backend: "loky"
 
 # Optional Appendix artifact: one-page synthetic sanity check (disabled by default).
 synthetic_sanity:
@@ -125,6 +158,9 @@ synthetic_sanity:
   T: 2200
   K: 3
   persistence_p: 0.97
+  # Robustness sweep over persistence values and K; confirms finding is not DGP-specific.
+  persistence_sweep: [0.80, 0.90, 0.97]
+  k_sweep: [2, 3, 4]
   drift_alpha: 0.6
   data_seed: 123
   # Rolling protocol
