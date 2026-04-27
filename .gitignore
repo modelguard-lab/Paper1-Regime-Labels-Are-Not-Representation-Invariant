@@ -43,3 +43,23 @@ paper/**/*.tiff
 paper/**/*.svg
 paper/**/*.webp
 paper/**/*.eps
+
+### LaTeX build artifacts
+*.aux
+*.bbl
+*.blg
+*.log
+*.out
+*.spl
+*.toc
+*.lof
+*.lot
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.nav
+*.snm
+*.vrb
+*.bak
+*.bak.truncated
+*.tex.bak*
