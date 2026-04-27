@@ -30,6 +30,9 @@ Thumbs.db
 ### Word temporary files
 paper/~$*.docx
 
+### Local manuscript snapshots (kept locally, not versioned)
+paper/main_frl_*.tex
+
 ### PDFs and paper figures
 *.pdf
 *.PDF
