@@ -350,7 +350,7 @@ When a risk manager calibrates a regime model at one feature specification and u
 We recommend that practitioners report a \emph{representation envelope} as a \emph{diagnostic complement} to existing temporal backtesting, not as a replacement for it: compute the regime-conditional risk measure (e.g.\ regime-conditional CVaR) under each admissible representation in the documented class, and report both the point estimate and the cross-representation range $[\min_\Phi, \max_\Phi]$. When the envelope width exceeds a materiality threshold (e.g.\ 10\% of the unconditional risk measure), or when cross-representation ARI falls below \citet{Steinley2004}'s 0.65 poor-recovery threshold, the model owner should escalate to model-risk-management committee for review and either adopt the conservative representation, form an ensemble across specifications, or document the limitation explicitly under SR~11-7's known-limitation provisions \citep{SR117}. The recommendation applies directly to \emph{partition-level} decisions (regime-conditional allocation, transition-matrix estimation, and CVaR attribution), where the low-ARI finding is unambiguous. For \emph{coarse rank-based} decisions (``is today high-risk?''), cross-representation top-1 Jaccard on the worst-CVaR state reaches only $0.47$ at $K=3$ (vs a symmetric chance baseline of $0.20$; Supplementary Section~\ref{app:ordering}): roughly half the days one representation flags as highest-risk are classified differently by another admissible representation. Ordering is therefore not categorically more stable than the underlying partition, and the representation envelope applies to rank-based decisions as it does to partition-based ones, though with the modestly tighter agreement the ordering metric provides ($1.7\times$ vs.\ $2.4\times$ excess over chance at the partition level). Regime labels are sensitive to both feature choice and temporal resolution \citep{companion_res}; a complete model-validation framework should track both dimensions.
 
 \paragraph{Day-to-day workflow.}
-Concretely, the diagnostic translates into a single quarterly compute step. On a model-validation cadence (we suggest quarterly, aligned with standard model-monitoring cycles), the model owner re-runs the regime classifier under the registered admissible class on the prior quarter's data, computes pairwise ARI within the class, and reports three numbers: the cross-rep ARI mean, the cross-rep CVaR envelope width, and the worst-asset percentile of each. Values below the documented trigger thresholds (ARI $< 0.65$, envelope $> 10\%$) escalate to MRM. Implementation reference and reproducibility scripts are released as the open-source Python package \texttt{mrv-lib} (\url{https://github.com/modelguard-lab/mrv-lib}); a worked nine-line numerical example using \SPX{} 2020-Q1 data is given in Supplementary Appendix~\ref{app:worked_example}, including the rolling ARI series, the CVaR envelope time series, and the 2020-03-23 stress-day cell that produces the headline 358\% peak in Table~\ref{tab:cvar_spread}.
+Concretely, the diagnostic translates into a single quarterly compute step. On a model-validation cadence (we suggest quarterly, aligned with standard model-monitoring cycles), the model owner re-runs the regime classifier under the registered admissible class on the prior quarter's data, computes pairwise ARI within the class, and reports three numbers: the cross-rep ARI mean, the cross-rep CVaR envelope width, and the worst-asset percentile of each. Values below the documented trigger thresholds (ARI $< 0.65$, envelope $> 10\%$) escalate to MRM. The diagnostic is implemented in the open-source Python package \texttt{mrv-lib} (\url{https://github.com/modelguard-lab/mrv-lib}); a worked numerical example using \SPX{} 2020-Q1 data is given in Supplementary Appendix~\ref{app:worked_example}, including the rolling ARI series, the CVaR envelope time series, and the 2020-03-23 stress-day cell that produces the headline 358\% peak in Table~\ref{tab:cvar_spread}.
 
 \paragraph{Scope of the recommendation.}
 \label{sec:limitations}
@@ -668,23 +668,11 @@ The cross-representation spread is $S_t = \max_\Phi \widehat{\mathrm{CVaR}}_t^\P
 Both triggers fire simultaneously (envelope $\gg 10\%$, ARI $< 0.65$), so the model-validation workflow escalates the day's regime classification to MRM committee review. Two responses are admissible under the recommendation: post the conservative end of the envelope (the more-negative cluster, of order $-700$~bp) for capital purposes, or report a mean-and-range envelope spanning the medium-volatility cluster ($\sim$$-200$~bp) to the high-volatility cluster ($\sim$$-700$~bp) and document the representation uncertainty as a known model limitation under SR~11-7. The point of the worked example is that both responses are documentable, repeatable, and timestamped; the workflow does not require the modeller to choose a ``correct'' representation, only to disclose the disagreement.
 
 \paragraph{Reproducibility.}
-The above computation can be reproduced in nine lines of Python via \texttt{mrv-lib}:
-\begin{verbatim}
-from mrv_lib import load_asset, register_class, fit_envelope
-prices  = load_asset("^GSPC", end="2020-03-23")
-reps    = register_class(["rep_a", "rep_a_unscaled", "rep_b",
-                          "rep_c1", "rep_c2", "rep_c3"])
-result  = fit_envelope(prices, reps, model="hmm", K=3, window=252)
-print(result.cvar_envelope.loc["2020-03-23"])  # spread in bp
-print(result.cross_rep_ari)                    # window-average ARI
-print(result.flag(envelope_threshold=0.10,     # any breached?
-                   ari_threshold=0.65))
-\end{verbatim}
 The complete reproducibility capsule (data + code + locked dependency versions) is registered as a Zenodo deposit; the DOI is added on acceptance.
 
 \section*{Data availability}
 
-Daily price data are obtained from Yahoo Finance via the Python package \texttt{yfinance}. The diagnostic framework is implemented in the open-source Python library \textbf{mrv-lib} (see Code Availability below); experiment-specific scripts and processed outputs are available from the authors upon request.
+Daily price data are obtained from Yahoo Finance via the Python package \texttt{yfinance}. The complete experiment code, data-processing pipeline, and processed outputs that produced the tables and figures in this paper are released at \url{https://github.com/modelguard-lab/Paper1-Regime-Labels-Are-Not-Representation-Invariant}. The productized diagnostic tool derived from this paper's findings is available separately as \textbf{mrv-lib} (see Code Availability below).
 
 \section*{Declaration of competing interest}
 
@@ -696,7 +684,7 @@ This research received no specific grant from any funding agency in the public, 
 
 \section*{Code availability}
 
-The diagnostic framework described in this paper is implemented as an open-source Python library, \textbf{mrv-lib}, available at \url{https://mrv-lib.org} and via PyPI (\texttt{pip install mrv-lib}). Source code: \url{https://github.com/modelguard-lab/mrv-lib}.
+Two open-source artifacts accompany this paper. The full experiment code that produced the empirical results---feature pipelines, four-asset case studies, robustness sweeps, and post-hoc analysis scripts---is released at \url{https://github.com/modelguard-lab/Paper1-Regime-Labels-Are-Not-Representation-Invariant}. The diagnostic recommended in Section~\ref{sec:conclusion} is provided separately as a productized Python library, \textbf{mrv-lib}, available at \url{https://mrv-lib.org} and via PyPI (\texttt{pip install mrv-lib}); source code at \url{https://github.com/modelguard-lab/mrv-lib}. The two repositories serve distinct purposes: the paper repository is a frozen reproducibility artifact, while \textbf{mrv-lib} is a maintained tool intended for use by model validators on their own institution-specific admissible classes.
 
 \bibliography{refs}
 
