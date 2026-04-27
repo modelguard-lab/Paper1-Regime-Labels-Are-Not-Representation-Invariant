@@ -35,19 +35,22 @@ python run.py
   - Rolling window alignment: window \(=252\), step \(=21\) (monthly update cadence)
   - \(K=3\) (fixed for cross-representation label matching)
 - **Varied**:
-  - **Representations (6)**:
+  - **Representations (8)**:
     - `rep_a` (standardized baseline)
     - `rep_a_unscaled` (no standardization; preprocessing ablation)
     - `rep_b` (alternative feature family)
     - `rep_c1` (longer feature horizons)
     - `rep_c2` (feature subset perturbation)
     - `rep_c3` (alternative baseline feature subset)
+    - `rep_d` (GARCH(1,1) conditional volatility; heterogeneous vol estimator)
+    - `rep_e` (VIX-family implied volatility; ^GSPC only, gated by `asset_filter`)
   - **Model**: HMM vs GMM
-  - **Seeds**: 1, 2
+  - **Seeds**: 1..20 (20 seeds; see `config.yaml:grid.seeds`)
 
 **Representations**:
 
-- 6 reps (`rep_a`, `rep_a_unscaled`, `rep_b`, `rep_c1`, `rep_c2`, `rep_c3`)
+- 8 reps defined in `config.yaml`: `rep_a`, `rep_a_unscaled`, `rep_b`, `rep_c1`, `rep_c2`, `rep_c3`, `rep_d`, `rep_e`.
+- `rep_e` is restricted to `^GSPC` via `asset_filter` (VIX is the S&P 500 implied-vol index), so non-S&P assets run with 7 reps.
 - Default: rolling z-score standardization; `rep_a_unscaled` is the only unstandardized control.
 
 Data requirement: `data/` CSVs (e.g. `GSPC.csv`, `IEF.csv`). If a CSV is missing,

@@ -34,12 +34,51 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 ROOT = Path(__file__).resolve().parent.parent
 OUTPUTS_DIR = ROOT / "outputs"
-REPS = ["rep_a", "rep_a_unscaled", "rep_b", "rep_c1", "rep_c2", "rep_c3", "rep_d"]
-MODELS = ["gmm", "hmm"]
+# REPS and MODELS are intentionally not defined at module level: they must be
+# sourced from config.yaml via _resolve_run_defs(cfg). Hardcoded module-level
+# lists drift silently from config (e.g., rep_e was once missing), dropping
+# representations from every downstream aggregate.
 K_DEFAULT = 3
 N_PERM = 99  # min p = 1/100 = 0.01 < 0.05; sufficient for paper's p<0.05 claim
 PERM_SEED = 42
 PERM_MAX_PAIRS = 2000  # subsample for speed; all pairs have p << 0.05 trivially
+
+
+def _parallel_or_sequential(func, args_list, n_jobs, label="parallel"):
+    """Run func(*args) for each args in args_list via joblib, with sequential fallback.
+
+    Mirrors the same helper in runner.py: loky workers can be killed on
+    Windows by MKL segfaults, OS OOM, or BrokenProcessPool under nested spawn.
+    On failure we log the traceback and retry sequentially so the post-hoc
+    pipeline still produces output instead of crashing out.
+    """
+    import traceback as _tb
+    import time as _t
+
+    from joblib import Parallel, delayed
+    from joblib.externals.loky.process_executor import TerminatedWorkerError
+
+    n_tasks = len(args_list)
+    if n_jobs is None or n_jobs <= 1 or n_tasks <= 1:
+        t0 = _t.perf_counter()
+        results = [func(*a) for a in args_list]
+        logger.info("%s: done in %.1fs (sequential, %d tasks)", label, _t.perf_counter() - t0, n_tasks)
+        return results
+    try:
+        t0 = _t.perf_counter()
+        results = Parallel(n_jobs=min(n_jobs, n_tasks), backend="loky")(
+            delayed(func)(*a) for a in args_list
+        )
+        logger.info("%s: done in %.1fs (loky, n_jobs=%d, %d tasks)", label, _t.perf_counter() - t0, min(n_jobs, n_tasks), n_tasks)
+        return results
+    except TerminatedWorkerError as e:
+        logger.warning("%s: loky worker died (%s); falling back to sequential.", label, e)
+    except Exception as e:
+        logger.error("%s: parallel error (%s); falling back to sequential.\n%s", label, e, _tb.format_exc())
+    t0 = _t.perf_counter()
+    results = [func(*a) for a in args_list]
+    logger.info("%s: done in %.1fs (sequential fallback, %d tasks)", label, _t.perf_counter() - t0, n_tasks)
+    return results
 
 
 # ---------------------------------------------------------------------------
@@ -108,8 +147,8 @@ def load_hard_states(
 def build_hard_map(
     asset_dir: Path,
     step: Optional[int],
-    reps: List[str] = REPS,
-    models: List[str] = MODELS,
+    reps: List[str],
+    models: List[str],
 ) -> Dict[Tuple[str, str, int, str], pd.Series]:
     """
     Build {(rep, model, seed, roll): state_series} from disk.
@@ -198,15 +237,12 @@ def cross_rep_records(
     rolls: List[str],
     n_jobs: int = 18,
 ) -> List[Dict]:
-    from joblib import Parallel, delayed
     tasks = [(m, s) for m in models for s in seeds]
     shards = {(m, s): {k: v for k, v in hard_map.items() if k[1] == m and k[2] == s}
               for m, s in tasks}
     logger.info("  Cross-rep AMI/VI: %d tasks, n_jobs=%d", len(tasks), n_jobs)
-    nested = Parallel(n_jobs=min(n_jobs, len(tasks)), backend="loky")(
-        delayed(_cross_rep_one_seed)(m, s, shards[(m, s)], reps, rolls)
-        for m, s in tasks
-    )
+    args = [(m, s, shards[(m, s)], reps, rolls) for m, s in tasks]
+    nested = _parallel_or_sequential(_cross_rep_one_seed, args, n_jobs, "Cross-rep AMI/VI")
     return [r for batch in nested for r in batch]
 
 
@@ -237,15 +273,12 @@ def temporal_records(
     rolls: List[str],
     n_jobs: int = 18,
 ) -> List[Dict]:
-    from joblib import Parallel, delayed
     tasks = [(rep, m, s) for rep in reps for m in models for s in seeds]
     shards = {(rep, m, s): {k: v for k, v in hard_map.items() if k[0] == rep and k[1] == m and k[2] == s}
               for rep, m, s in tasks}
     logger.info("  Temporal AMI/VI: %d tasks, n_jobs=%d", len(tasks), n_jobs)
-    nested = Parallel(n_jobs=min(n_jobs, len(tasks)), backend="loky")(
-        delayed(_temporal_one_unit)(rep, m, s, shards[(rep, m, s)], rolls)
-        for rep, m, s in tasks
-    )
+    args = [(rep, m, s, shards[(rep, m, s)], rolls) for rep, m, s in tasks]
+    nested = _parallel_or_sequential(_temporal_one_unit, args, n_jobs, "Temporal AMI/VI")
     return [r for batch in nested for r in batch]
 
 
@@ -283,8 +316,6 @@ def aggregate_permutation_pvalue(
 
     Parallelised over pairs via joblib.
     """
-    from joblib import Parallel, delayed
-
     rng = np.random.default_rng(seed)
 
     # Collect all valid (key_a, key_b) pair candidates
@@ -330,10 +361,8 @@ def aggregate_permutation_pvalue(
     logger.info("  Permutation test: %d pairs, n_perm=%d, n_jobs=%d", len(pair_data), n_perm, n_jobs)
 
     # Parallel permutation tests — each pair gets a unique seed
-    results = Parallel(n_jobs=min(n_jobs, len(pair_data)), backend="loky")(
-        delayed(_perm_one_pair)(a, b, n_perm, seed + i)
-        for i, (a, b) in enumerate(pair_data)
-    )
+    perm_args = [(a, b, n_perm, seed + i) for i, (a, b) in enumerate(pair_data)]
+    results = _parallel_or_sequential(_perm_one_pair, perm_args, n_jobs, "Permutation test")
 
     total_exceed = sum(r["exceed"] + 1 for r in results)
     total_trials = len(results) * (n_perm + 1)
@@ -471,12 +500,23 @@ def process_asset_step(
         logger.warning("  key_results.csv not found at %s", key_results_path)
 
 
-def update_step_sweep_summary(outputs_dir: Path, steps: List[int]) -> None:
-    """Regenerate step_sweep_summary.csv with ami/vi columns added."""
+def update_step_sweep_summary(
+    outputs_dir: Path, steps: List[int], allowed_assets: Optional[List[str]] = None
+) -> None:
+    """Regenerate step_sweep_summary.csv with ami/vi columns added.
+
+    If `allowed_assets` is provided (typically from cfg.assets via utils.safe_name),
+    only those asset directories are included. Otherwise every subdirectory of
+    outputs_dir is included — which incorrectly pulls in diagnostic dirs like
+    synthetic_sanity/ and contaminates the 4-asset aggregates.
+    """
     summary_path = outputs_dir / "step_sweep_summary.csv"
+    allowed_set = set(allowed_assets) if allowed_assets is not None else None
     rows = []
     for asset_dir in sorted(p for p in outputs_dir.iterdir() if p.is_dir()):
         asset = asset_dir.name
+        if allowed_set is not None and asset not in allowed_set:
+            continue
         for step in steps:
             kr_path = asset_dir / f"step_{step}" / "key_results.csv"
             if not kr_path.exists():
@@ -502,27 +542,48 @@ def update_step_sweep_summary(outputs_dir: Path, steps: List[int]) -> None:
         logger.info("Updated step_sweep_summary.csv (%d rows)", len(rows))
 
 
-def _resolve_run_defs(cfg: Optional[Dict]) -> Tuple[List[int], List[str], List[str]]:
-    steps = [21, 63, 126, 252]
-    reps = list(REPS)
-    models = list(MODELS)
-    if isinstance(cfg, dict):
-        grid = cfg.get("grid", {}) if isinstance(cfg.get("grid", {}), dict) else {}
-        if isinstance(grid.get("step_sweep"), list) and grid.get("step_sweep"):
-            steps = [int(x) for x in grid.get("step_sweep")]
-        elif "step" in grid:
-            steps = [int(grid.get("step"))]
-        reps_cfg = cfg.get("representations", {})
-        if isinstance(reps_cfg, dict) and reps_cfg:
-            reps = [str(k) for k in reps_cfg.keys()]
-        models_cfg = cfg.get("models", {})
-        if isinstance(models_cfg, dict) and models_cfg:
-            models = [
-                str(m)
-                for m in ("gmm", "hmm")
-                if isinstance(models_cfg.get(m, {}), dict)
-                and bool(models_cfg.get(m, {}).get("enabled", True))
-            ]
+def _resolve_run_defs(cfg: Dict) -> Tuple[List[int], List[str], List[str]]:
+    """Resolve (steps, reps, models) from cfg.
+
+    Raises on missing/empty cfg keys. Previously this function fell back to
+    hardcoded module-level REPS/MODELS when cfg was absent or incomplete,
+    which silently dropped any rep defined in config.yaml but not in the
+    hardcoded list (e.g., rep_e). Silent fallback is now disabled; callers
+    must provide a fully populated cfg loaded from config.yaml.
+    """
+    if not isinstance(cfg, dict):
+        raise TypeError(
+            "_resolve_run_defs requires a dict cfg (e.g. from config.yaml); got "
+            f"{type(cfg).__name__}"
+        )
+
+    grid = cfg.get("grid", {})
+    if not isinstance(grid, dict):
+        grid = {}
+    if isinstance(grid.get("step_sweep"), list) and grid.get("step_sweep"):
+        steps = [int(x) for x in grid["step_sweep"]]
+    elif "step" in grid:
+        steps = [int(grid["step"])]
+    else:
+        raise KeyError("cfg.grid must define 'step_sweep' (non-empty list) or 'step' (int)")
+
+    reps_cfg = cfg.get("representations")
+    if not isinstance(reps_cfg, dict) or not reps_cfg:
+        raise KeyError("cfg.representations must be a non-empty dict of rep_name -> spec")
+    reps = [str(k) for k in reps_cfg.keys()]
+
+    models_cfg = cfg.get("models")
+    if not isinstance(models_cfg, dict) or not models_cfg:
+        raise KeyError("cfg.models must be a non-empty dict")
+    models = [
+        str(m)
+        for m in ("gmm", "hmm")
+        if isinstance(models_cfg.get(m, {}), dict)
+        and bool(models_cfg.get(m, {}).get("enabled", True))
+    ]
+    if not models:
+        raise ValueError("cfg.models has no enabled entries among ('gmm', 'hmm')")
+
     return steps, reps, models
 
 
@@ -541,17 +602,25 @@ def main(cfg: Optional[Dict] = None) -> None:
         sys.exit(1)
     steps, reps, models = _resolve_run_defs(cfg)
     outputs_dir = Path(cfg.get("outputs_dir", str(OUTPUTS_DIR))) if isinstance(cfg, dict) else OUTPUTS_DIR
+
+    # Restrict to cfg.assets (safe_name-normalised) to avoid pulling in diagnostic
+    # subdirs like synthetic_sanity/ that contaminate 4-asset aggregates.
+    from utils import assets_from_cfg, safe_name
+    allowed_assets = {safe_name(a) for a in assets_from_cfg(cfg)}
+
     asset_dirs = sorted(
         p for p in outputs_dir.iterdir()
-        if p.is_dir() and any((p / f"step_{s}").exists() for s in steps)
+        if p.is_dir() and p.name in allowed_assets
+        and any((p / f"step_{s}").exists() for s in steps)
     )
     if not asset_dirs:
-        # Fallback root-layout assets
+        # Fallback root-layout assets (still filtered to cfg.assets).
         asset_dirs = sorted(
-            p for p in outputs_dir.iterdir() if p.is_dir() and (p / "key_results.csv").exists()
+            p for p in outputs_dir.iterdir()
+            if p.is_dir() and p.name in allowed_assets and (p / "key_results.csv").exists()
         )
     if not asset_dirs:
-        logger.error("No asset directories found under %s", outputs_dir)
+        logger.error("No asset directories found under %s (cfg.assets=%s)", outputs_dir, sorted(allowed_assets))
         sys.exit(1)
 
     for asset_dir in asset_dirs:
@@ -577,7 +646,25 @@ def main(cfg: Optional[Dict] = None) -> None:
                 key_results_path=asset_dir / "key_results.csv",
             )
 
-    update_step_sweep_summary(outputs_dir, steps)
+    update_step_sweep_summary(outputs_dir, steps, allowed_assets=sorted(allowed_assets))
+
+    # Regenerate the multi-asset summary so newly-appended perm p-values and
+    # AMI/VI rows propagate to outputs/key_results_all_assets.csv. The runner's
+    # native writer is keyed on baseline step=21 per-asset key_results.csv.
+    baseline_step = int(cfg.get("grid", {}).get("step", 21))
+    rows: List[pd.DataFrame] = []
+    for asset in allowed_assets:
+        kr = outputs_dir / asset / f"step_{baseline_step}" / "key_results.csv"
+        if not kr.exists():
+            continue
+        sub = pd.read_csv(kr)
+        sub.insert(0, "asset", asset)
+        rows.append(sub)
+    if rows:
+        all_path = outputs_dir / "key_results_all_assets.csv"
+        pd.concat(rows, axis=0, ignore_index=True).to_csv(all_path, index=False)
+        logger.info("Updated %s (%d rows)", all_path, sum(len(r) for r in rows))
+
     logger.info("Done.")
 
 

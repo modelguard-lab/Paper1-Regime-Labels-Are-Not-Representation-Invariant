@@ -9,17 +9,20 @@ then measuring how much this estimate varies across representations.
 from __future__ import annotations
 
 import logging
+import sys
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 
+from utils import assets_from_cfg, enabled_models_from_cfg, reps_from_cfg
+
 logger = logging.getLogger(__name__)
 
-REPS = ["rep_a", "rep_a_unscaled", "rep_b", "rep_c1", "rep_c2", "rep_c3", "rep_d"]
-MODELS = ["gmm", "hmm"]
-ASSETS = ["BTC-USD", "GLD", "GSPC", "IEF"]
+# REPS/MODELS/ASSETS intentionally not defined at module level: they must be
+# sourced from config.yaml. A hardcoded 7-rep list here previously silently
+# dropped rep_e from the S&P-500 CVaR spread analysis.
 K_DEFAULT = 3
 W_DEFAULT = 252
 SEED_DEFAULT = 1
@@ -49,9 +52,9 @@ def _state_cvar(returns: pd.Series, states: pd.Series, alpha: float = ALPHA) -> 
 def compute_var_spread(
     outputs_dir: Path,
     raw_dir: Path,
-    assets: List[str] | None = None,
-    models: List[str] | None = None,
-    reps: List[str] | None = None,
+    assets: List[str],
+    models: List[str],
+    reps: List[str],
     K: int = K_DEFAULT,
     W: int = W_DEFAULT,
     seed: int = SEED_DEFAULT,
@@ -65,14 +68,11 @@ def compute_var_spread(
     - overall_cvar_pp: unconditional CVaR in percentage points
     - spread_pct_of_cvar: spread as fraction of |unconditional CVaR|
     - stress-period columns when data is available
-    """
-    if assets is None:
-        assets = ASSETS
-    if models is None:
-        models = MODELS
-    if reps is None:
-        reps = REPS
 
+    assets/models/reps are required (no silent fallback to hardcoded defaults).
+    Callers should source them from config.yaml via utils.assets_from_cfg /
+    enabled_models_from_cfg / reps_from_cfg.
+    """
     results = []
 
     for asset in assets:
@@ -158,26 +158,69 @@ def compute_var_spread(
     return pd.DataFrame(results)
 
 
-def main() -> None:
+def main(cfg: Optional[Dict] = None) -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     project = Path(__file__).resolve().parent.parent
     outputs = project / "outputs"
     raw = project / "data"
 
-    df = compute_var_spread(outputs, raw)
-    if df.empty:
+    if cfg is None:
+        cfg_path = project / "config.yaml"
+        if cfg_path.exists():
+            try:
+                import yaml
+
+                cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+            except Exception:
+                cfg = None
+    if not isinstance(cfg, dict):
+        logger.error("posthoc_var_spread requires config context (cfg or ROOT/config.yaml).")
+        sys.exit(1)
+
+    assets = assets_from_cfg(cfg)
+    reps = reps_from_cfg(cfg)
+    models = enabled_models_from_cfg(cfg)
+
+    # Average across the first 10 fitting seeds from cfg.grid.seeds. Single-seed
+    # spreads are materially biased for HMM (per-seed CV ~ 13%); seed averaging
+    # gives the practitioner-relevant point estimate. Backwards compatibility:
+    # if cfg.grid.seeds is missing or short, fall back to seed=1 only.
+    grid = cfg.get("grid", {}) or {}
+    seeds = list(grid.get("seeds") or [1])
+    seeds = [int(s) for s in seeds[:10]]
+    if not seeds:
+        seeds = [1]
+
+    per_seed: List[pd.DataFrame] = []
+    for s in seeds:
+        df_s = compute_var_spread(outputs, raw, assets=assets, models=models, reps=reps, seed=s)
+        if df_s.empty:
+            continue
+        df_s = df_s.copy()
+        df_s["seed"] = s
+        per_seed.append(df_s)
+
+    if not per_seed:
         print("No results computed.")
         return
+    per_seed_df = pd.concat(per_seed, ignore_index=True)
+    per_seed_df.to_csv(outputs / "var_spread_summary_per_seed.csv", index=False)
+
+    # Seed-averaged summary: mean and SD across seeds for each (asset, model).
+    metric_cols = [c for c in per_seed_df.columns if c not in {"asset", "model", "seed", "n_rolls"}]
+    grouped = per_seed_df.groupby(["asset", "model"], as_index=False)[metric_cols].mean()
+    df = grouped
 
     out_path = outputs / "var_spread_summary.csv"
     df.to_csv(out_path, index=False)
-    print(f"\nSaved to {out_path}")
+    logger.info("Wrote %s (seed-averaged across %d seeds: %s)", out_path, len(seeds), seeds)
+    print(f"\nSaved to {out_path}  (mean across {len(seeds)} seeds)")
     print()
     print(df.to_string(index=False, float_format="%.1f"))
     print()
 
     # Summary
-    for model in MODELS:
+    for model in models:
         sub = df[df["model"] == model]
         if sub.empty:
             continue

@@ -39,19 +39,33 @@ def variation_of_information(a: np.ndarray, b: np.ndarray) -> float:
 
 
 def align_states(reference: np.ndarray, target: np.ndarray, n_states: int) -> np.ndarray:
-    """Align target labels to reference via maximum agreement matching."""
+    """Align target labels to reference via Hungarian maximum-agreement matching.
+
+    Not used by stability_metrics/temporal_disjoint_metrics: ARI/NMI/AMI/VI are
+    all label-permutation-invariant and the raw labels are compared directly.
+    This helper exists for downstream consumers that DO need a label-matched
+    sequence — e.g., per-state risk-profile comparison (_matched_ordering_metrics
+    in runner.py), state-level Wasserstein alignment (_matched_wasserstein_cost),
+    and any figure that overlays two state sequences on the same color scale.
+    """
     conf = np.zeros((n_states, n_states), dtype=int)
     for i in range(n_states):
         for j in range(n_states):
             conf[i, j] = int(np.sum((reference == i) & (target == j)))
-    row_ind, col_ind = linear_sum_assignment(conf.max() - conf)
+    # scipy >= 1.4 supports maximize=True directly; this is equivalent to the
+    # old `linear_sum_assignment(conf.max() - conf)` trick but reads cleaner.
+    row_ind, col_ind = linear_sum_assignment(conf, maximize=True)
     mapping = {col: row for row, col in zip(row_ind, col_ind)}
     return np.array([mapping.get(int(s), int(s)) for s in target], dtype=int)
 
 
 def stability_metrics(labels_a: pd.Series, labels_b: pd.Series, n_states: int) -> StabilityScores:
     """
-    Compute ARI/NMI after aligning labels_b to labels_a.
+    Compute ARI/NMI/AMI/VI between two label sequences aligned by time index.
+
+    No label-permutation alignment is performed: ARI/NMI/AMI/VI are all invariant
+    to label relabelling by construction, so align_states is unnecessary and
+    deliberately not called here.
 
     Important: we align by **time index**, and we must be robust to duplicate indices
     that can arise from imperfect merges of per-window exports. Using index intersection
@@ -93,10 +107,16 @@ def temporal_disjoint_metrics(labels_a: pd.Series, labels_b: pd.Series) -> Stabi
     """
     Compute temporal stability on the non-overlapping parts of two windows.
 
-    Rationale:
-    - Intersection-based temporal metrics can be inflated when rolling windows overlap.
-    - We therefore compare labels on disjoint segments only (a\\b vs b\\a), paired by
-      time order after sorting each segment. This is a transition-consistency proxy.
+    Disjoint segments (a\\b vs b\\a) are paired positionally after sorting by
+    time, so paired observations describe *different* timestamps separated by
+    approximately W business days. The returned ARI/AMI/VI are therefore
+    proxies for lag-W label agreement under the working hypothesis of regime
+    persistence, not classical partition-agreement measures on co-labelled
+    data; see paper §2.5 for the interpretation.
+
+    When |a\\b| != |b\\a| (e.g., NA gaps), both sides are center-truncated to
+    the common length so the positional pairing is symmetric in time rather
+    than systematically biased toward the earliest dates of the longer side.
     """
     if not isinstance(labels_a, pd.Series):
         labels_a = pd.Series(labels_a)
@@ -119,8 +139,10 @@ def temporal_disjoint_metrics(labels_a: pd.Series, labels_b: pd.Series) -> Stabi
     if n < 2:
         return StabilityScores(ari=float("nan"), nmi=float("nan"), ami=float("nan"), vi=float("nan"))
 
-    a_only = a_only[:n]
-    b_only = b_only[:n]
+    lo_a = (len(a_only) - n) // 2
+    lo_b = (len(b_only) - n) // 2
+    a_only = a_only[lo_a:lo_a + n]
+    b_only = b_only[lo_b:lo_b + n]
     return StabilityScores(
         ari=float(adjusted_rand_score(a_only, b_only)),
         nmi=float(normalized_mutual_info_score(a_only, b_only)),

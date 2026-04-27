@@ -59,7 +59,9 @@ def _replace_block(text: str, start_tag: str, end_tag: str, new_block: str) -> s
     return text[: m.start(2)] + new_block.rstrip() + text[m.end(2) :]
 
 
-def _iter_asset_step_key_results(outputs_dir: Path) -> Iterable[Tuple[str, Optional[int], Path]]:
+def _iter_asset_step_key_results(
+    outputs_dir: Path, allowed_assets: Optional[Iterable[str]] = None
+) -> Iterable[Tuple[str, Optional[int], Path]]:
     """
     Yield (asset, step, key_results_path).
 
@@ -67,11 +69,18 @@ def _iter_asset_step_key_results(outputs_dir: Path) -> Iterable[Tuple[str, Optio
       outputs/<asset>/step_<s>/key_results.csv
     and single-run layout:
       outputs/<asset>/key_results.csv
+
+    If `allowed_assets` is provided, only those asset directory names are
+    yielded. Without this filter, diagnostic subdirs like synthetic_sanity/
+    leak into 4-asset aggregates.
     """
     if not outputs_dir.exists():
         return
+    allowed_set = set(allowed_assets) if allowed_assets is not None else None
     for asset_dir in sorted([p for p in outputs_dir.iterdir() if p.is_dir()]):
         asset = asset_dir.name
+        if allowed_set is not None and asset not in allowed_set:
+            continue
         # step_* layout
         step_dirs = sorted([p for p in asset_dir.glob("step_*") if p.is_dir()])
         any_step = False
@@ -105,10 +114,12 @@ def _get_metric(df: pd.DataFrame, metric: str, scope: str) -> Optional[float]:
     return float(pd.to_numeric(s["value"].iloc[0], errors="coerce"))
 
 
-def _compute_model_split_block(outputs_dir: Path, baseline: BaselineSpec) -> str:
+def _compute_model_split_block(
+    outputs_dir: Path, baseline: BaselineSpec, allowed_assets: Optional[Iterable[str]] = None
+) -> str:
     # Collect per-asset baseline key_results.
     per_asset: Dict[str, pd.DataFrame] = {}
-    for asset, step, p in _iter_asset_step_key_results(outputs_dir):
+    for asset, step, p in _iter_asset_step_key_results(outputs_dir, allowed_assets=allowed_assets):
         if step is None:
             continue
         if int(step) != int(baseline.step):
@@ -560,11 +571,19 @@ def update_main_tex_tables(outputs_dir: Path, tex_path: Path, cfg: Dict) -> None
     baseline_step = int(grid.get("step", 21))
     steps = [int(s) for s in (grid.get("step_sweep") or [21, 63, 126, 252])]
 
+    # Restrict to cfg.assets (safe_name-normalised) so diagnostic dirs
+    # (e.g., synthetic_sanity/) do not contaminate 4-asset aggregates.
+    try:
+        from utils import assets_from_cfg, safe_name
+        allowed = {safe_name(a) for a in assets_from_cfg(cfg)}
+    except (KeyError, TypeError, ValueError):
+        allowed = None
+
     # Baseline rows: by-model means across assets at baseline step.
     rows = []
     pvalues: List[float] = []
     all_rows = []
-    for asset, step, p in _iter_asset_step_key_results(outputs_dir):
+    for asset, step, p in _iter_asset_step_key_results(outputs_dir, allowed_assets=allowed):
         if step is None or int(step) != baseline_step:
             continue
         df = _read_key_results(p)
@@ -593,7 +612,7 @@ def update_main_tex_tables(outputs_dir: Path, tex_path: Path, cfg: Dict) -> None
 
         # Also collect seed-level CIs when available
         seed_ci_rows = []
-        for asset, step, p in _iter_asset_step_key_results(outputs_dir):
+        for asset, step, p in _iter_asset_step_key_results(outputs_dir, allowed_assets=allowed):
             if step is None or int(step) != baseline_step:
                 continue
             df = _read_key_results(p)
@@ -718,7 +737,12 @@ def update_empirical_results_md(outputs_dir: Path, md_path: Path, cfg: Dict) -> 
     step_sweep = grid.get("step_sweep") or []
     steps = [int(s) for s in step_sweep] if isinstance(step_sweep, list) else []
 
-    model_block = _compute_model_split_block(outputs_dir, baseline)
+    try:
+        from utils import assets_from_cfg, safe_name
+        allowed = {safe_name(a) for a in assets_from_cfg(cfg)}
+    except (KeyError, TypeError, ValueError):
+        allowed = None
+    model_block = _compute_model_split_block(outputs_dir, baseline, allowed_assets=allowed)
     step_block = _compute_step_sweep_block(outputs_dir, steps) if steps else "*(step sweep is disabled.)*"
     drift_block = _compute_semantic_drift_block(outputs_dir, baseline.step)
     robustness_block = _compute_robustness_block(outputs_dir)
@@ -756,4 +780,44 @@ def update_empirical_results_md(outputs_dir: Path, md_path: Path, cfg: Dict) -> 
     )
 
     md_path.write_text(text, encoding="utf-8")
+
+
+def main(cfg: Optional[Dict] = None) -> None:
+    """CLI entry point: sync paper/main.tex tables and sections/04_empirical_results.md from outputs.
+
+    Mirrors the tail of runner.run(). Loads config.yaml if cfg is not provided.
+    """
+    import logging as _logging
+    _logger = _logging.getLogger("paper_autofill")
+
+    project_dir = Path(__file__).resolve().parents[1]
+    outputs_dir = project_dir / "outputs"
+
+    if cfg is None:
+        cfg_path = project_dir / "config.yaml"
+        if cfg_path.exists():
+            try:
+                import yaml
+
+                cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+            except Exception:
+                cfg = None
+    if not isinstance(cfg, dict):
+        _logger.error("paper_autofill requires config context (cfg or ROOT/config.yaml).")
+        import sys
+        sys.exit(1)
+
+    md_path = project_dir / "paper" / "sections" / "04_empirical_results.md"
+    if md_path.exists():
+        update_empirical_results_md(outputs_dir=outputs_dir, md_path=md_path, cfg=cfg)
+        _logger.info("Auto-filled Results numbers in %s", md_path)
+
+    tex_path = project_dir / "paper" / "main.tex"
+    if tex_path.exists():
+        update_main_tex_tables(outputs_dir=outputs_dir, tex_path=tex_path, cfg=cfg)
+        _logger.info("Synchronized numeric table rows in %s", tex_path)
+
+
+if __name__ == "__main__":
+    main()
 

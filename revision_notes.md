@@ -2,7 +2,7 @@
 
 Addressed 7 substantive critiques + 11 minor items + 6 self-identified weaknesses.
 
-**Re-run required:** `python run.py` → `python src/posthoc_figs.py` → `python src/posthoc_ami_vi_perm.py` → `python src/posthoc_var_spread.py` → `python src/posthoc_synthetic_groundtruth.py` to regenerate results with the new config (20 baseline seeds, 7 representations including rep_d). `paper_autofill.py` will auto-sync table numbers after re-run.
+**Re-run required:** `python run.py` → `python src/posthoc_figs.py` → `python src/posthoc_ami_vi_perm.py` → `python src/posthoc_var_spread.py` → `python src/posthoc_synthetic_groundtruth.py` to regenerate results with the new config (20 baseline seeds, 8 representations: rep_a--rep_d applied to all four assets, rep_e (VIX-family) applied only to ^GSPC via `asset_filter`). `paper_autofill.py` will auto-sync Tables 1 and 3 numbers after re-run; Table 2 (CVaR spread) ^GSPC rows and the line-205 aggregate prose must be patched manually.
 
 ---
 

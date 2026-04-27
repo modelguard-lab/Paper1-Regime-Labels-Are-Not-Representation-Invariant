@@ -61,8 +61,13 @@ def _run_pipeline() -> None:
 
 
 def _run_module(name: str) -> None:
-    from src.core.runtime import configure_console_logging
+    from src.core.runtime import configure_console_logging, set_thread_env_defaults
     configure_console_logging()
+    # Post-hoc modules use joblib/loky for pair-level parallelism. On Windows,
+    # MKL segfaults inside forked workers unless thread counts are pinned to 1
+    # *before* numpy/scipy import in the workers. Set this in the parent so
+    # loky inherits the env.
+    set_thread_env_defaults(1)
     run_module_command(name)
 
 

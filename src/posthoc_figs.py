@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Dict, Optional
 import json
 import logging
+import sys
 
 import pandas as pd
 
@@ -13,15 +15,30 @@ from plots import (
     plot_model_split_grouped_bar_from_key_results,
     plot_representation_failure_matrix,
 )
+from utils import reps_from_cfg
 
 
 logger = logging.getLogger(__name__)
 
 
-def main() -> None:
+def main(cfg: Optional[Dict] = None) -> None:
     project_dir = Path(__file__).resolve().parent.parent
     outputs_dir = project_dir / "outputs"
     raw_dir = project_dir / "data"
+
+    if cfg is None:
+        cfg_path = project_dir / "config.yaml"
+        if cfg_path.exists():
+            try:
+                import yaml
+
+                cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+            except Exception:
+                cfg = None
+    if not isinstance(cfg, dict):
+        logger.error("posthoc_figs requires config context (cfg or ROOT/config.yaml).")
+        sys.exit(1)
+    all_reps_from_cfg = reps_from_cfg(cfg)
     # 1) ARI gap distribution (temporal-minus-cross) from key_results_all_assets.csv.
     key_results_path = outputs_dir / "key_results_all_assets.csv"
     if key_results_path.exists():
@@ -181,7 +198,9 @@ def main() -> None:
         k = 3
         w = 252
         step_dir = outputs_dir / asset / "step_21"
-        all_reps = ["rep_a", "rep_a_unscaled", "rep_b", "rep_c1", "rep_c2", "rep_c3", "rep_d"]
+        # Source rep list from config.yaml (hardcoded list previously dropped
+        # rep_e from this figure). Missing per-rep files are tolerated below.
+        all_reps = list(all_reps_from_cfg)
 
         # Load price
         price_path = raw_dir / f"{asset}.csv"

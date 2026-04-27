@@ -819,15 +819,28 @@ def _state_return_samples(
     return out
 
 
-def _matched_wasserstein_cost(samples_a: List[np.ndarray], samples_b: List[np.ndarray]) -> float:
+def _matched_wasserstein_cost(
+    samples_a: List[np.ndarray], samples_b: List[np.ndarray]
+) -> Tuple[float, int, int]:
     """
     Minimum average 1D Wasserstein cost after Hungarian matching.
 
-    Empty samples incur a large penalty so that well-defined states match first.
+    Empty-sample cells incur a large penalty so well-defined states match first.
+    A record where the penalty participates in the Hungarian assignment produces
+    a strongly inflated cost that can dominate downstream averaging (e.g. a K=3
+    window where a tail state has zero members).
+
+    Returns:
+        (cost, n_matched_finite, k):
+            cost — average matched cost including any penalty cells
+            n_matched_finite — number of Hungarian-matched pairs whose cost was
+                computable (i.e. NOT penalty-filled); callers should filter or
+                flag records where n_matched_finite < k
+            k — min(len(samples_a), len(samples_b))
     """
     k = int(min(len(samples_a), len(samples_b)))
     if k <= 0:
-        return float("nan")
+        return float("nan"), 0, 0
     cost = np.full((k, k), np.nan, dtype=float)
     for i in range(k):
         for j in range(k):
@@ -840,13 +853,16 @@ def _matched_wasserstein_cost(samples_a: List[np.ndarray], samples_b: List[np.nd
     # If everything is NaN, cost is undefined.
     finite = cost[np.isfinite(cost)]
     if finite.size == 0:
-        return float("nan")
+        return float("nan"), 0, k
 
     penalty = float(finite.max()) * 10.0 + 1.0
     cost_filled = np.where(np.isfinite(cost), cost, penalty)
     row_ind, col_ind = linear_sum_assignment(cost_filled)
     matched = cost_filled[row_ind, col_ind]
-    return float(np.mean(matched)) if matched.size else float("nan")
+    matched_from_finite = np.isfinite(cost[row_ind, col_ind])
+    n_finite = int(np.sum(matched_from_finite))
+    cost_mean = float(np.mean(matched)) if matched.size else float("nan")
+    return cost_mean, n_finite, k
 
 
 def _semantic_crossrep_one_seed(
@@ -868,11 +884,12 @@ def _semantic_crossrep_one_seed(
                 a, b = rep_names[i], rep_names[j]
                 if a not in samples_by_rep or b not in samples_by_rep:
                     continue
-                v = _matched_wasserstein_cost(samples_by_rep[a], samples_by_rep[b])
+                v, n_finite, k_total = _matched_wasserstein_cost(samples_by_rep[a], samples_by_rep[b])
                 records.append({
                     "kind": "cross_rep", "rep_a": a, "rep_b": b,
                     "model": model_name, "K": k, "window": window,
                     "seed": int(seed), "roll": str(roll), "wasserstein": v,
+                    "wasserstein_n_finite": n_finite, "wasserstein_k": k_total,
                 })
     return records
 
@@ -923,11 +940,12 @@ def _semantic_temporal_one_unit(
             continue
         sa = _state_return_samples(returns, a, k)
         sb = _state_return_samples(returns, b, k)
-        v = _matched_wasserstein_cost(sa, sb)
+        v, n_finite, k_total = _matched_wasserstein_cost(sa, sb)
         records.append({
             "kind": "temporal", "rep": rep, "model": model_name,
             "K": k, "window": window, "seed": int(seed),
             "roll_a": str(roll_a), "roll_b": str(roll_b), "wasserstein": v,
+            "wasserstein_n_finite": n_finite, "wasserstein_k": k_total,
         })
     return records
 
@@ -1262,11 +1280,17 @@ def _ordering_independent_null_distribution(
 ) -> Dict[str, float]:
     """Ordering metrics under two independently generated random K-partitions.
 
-    Unlike the permutation null (which permutes one side against the structured
-    original), this null generates BOTH sequences as independent uniform random
-    K-partitions so the Hungarian optimiser cannot exploit pre-existing structure
-    on one side.  Expected indep-null top-1 ≈ 1/K; Spearman ≈ 0, making it a
-    proper test of whether observed ordering exceeds a symmetric chance level.
+    Empirically this null produces top-1 values of 0.78-0.96 across K=2..5
+    rather than the 1/K we naively expected, because `_matched_ordering_metrics`
+    matches states via Hungarian on |delta CVaR| + |delta Vol|: the matcher
+    essentially forces rank-alignment of the two partitions' CVaR-extreme states
+    regardless of whether the underlying partitions share meaningful ordering
+    structure. Consequently this null cannot be interpreted as "symmetric chance
+    baseline"; the Hungarian + CVaR combination is a constructive bias.
+
+    See posthoc_rank_aligned_ordering.py for a metric with a well-defined 1/K
+    null (relabel both sequences by within-partition CVaR rank, then compare
+    pointwise) that does not share this defect.
     """
     rng = np.random.default_rng(seed)
     dates = states.dropna().index

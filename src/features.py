@@ -75,10 +75,19 @@ def _compute_garch_vol(returns: pd.Series) -> pd.Series:
             "Install it with: pip install arch>=5.0"
         ) from exc
 
-    # arch expects returns in percentage points for numerical stability
+    # arch expects returns in percentage points for numerical stability.
+    #
+    # Observability: fallback events log a "GARCH_FALLBACK" tag so operators can
+    # count them per run with `grep -c GARCH_FALLBACK outputs/run.log`. When this
+    # fallback fires, rep_d silently degrades to a rolling-vol representation
+    # (rep_a-subset), which undermines the "structurally heterogeneous vol
+    # estimator" claim; treat non-zero counts as a data-quality signal.
     scaled = returns.dropna() * 100.0
     if len(scaled) < 50:
-        logger.warning("Series too short for GARCH (%d obs); falling back to rolling vol", len(scaled))
+        logger.warning(
+            "GARCH_FALLBACK reason=series_too_short n_obs=%d (rep_d degraded to 20-day rolling vol)",
+            len(scaled),
+        )
         return (_compute_volatility(returns, 20)).rename("garch_vol")
 
     try:
@@ -90,15 +99,29 @@ def _compute_garch_vol(returns: pd.Series) -> pd.Series:
         out.loc[cond_vol.index] = cond_vol.values
         return out
     except Exception:
-        logger.warning("GARCH fit failed; falling back to rolling vol", exc_info=True)
+        logger.warning(
+            "GARCH_FALLBACK reason=fit_failed (rep_d degraded to 20-day rolling vol)",
+            exc_info=True,
+        )
         return (_compute_volatility(returns, 20)).rename("garch_vol")
 
 
 def _compute_vix_level(vix: pd.Series, std_window: int = 120) -> pd.Series:
-    """Rolling z-score of VIX level (captures relative implied-vol stress)."""
-    mean = vix.rolling(window=std_window, min_periods=std_window).mean()
-    std = vix.rolling(window=std_window, min_periods=std_window).std()
-    return ((vix - mean) / std).rename("vix_level")
+    """Raw VIX level, renamed for rep_e consumption.
+
+    Previously this function applied a 120-day rolling z-score internally,
+    which — combined with rep_e's `standardization: rolling_zscore(window=120)`
+    at the rep level — produced a double-z-score. For matched windows the two
+    applications are asymptotically idempotent (z(z(x)) ≈ z(x)), so historical
+    numerics are not materially corrupted, but the transformation was
+    misleading. We now return the raw level and let the rep-level standardizer
+    handle the single z-score pass uniformly with vix_change and vix_percentile.
+
+    `std_window` is kept in the signature for config-compatibility but is
+    unused; callers can omit it going forward.
+    """
+    del std_window  # kept for backward compatibility with existing configs
+    return vix.rename("vix_level")
 
 
 def _compute_vix_change(vix: pd.Series, window: int = 5) -> pd.Series:
