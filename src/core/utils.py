@@ -1,8 +1,13 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
+import time
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Tuple
+
+from src.core.features import RepConfig
 
 
 def reps_from_cfg(cfg: Dict[str, Any]) -> List[str]:
@@ -80,3 +85,83 @@ def save_json(path: Path, payload: Dict[str, Any]) -> None:
     ensure_dir(path.parent)
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
+
+def _fmt_hms(seconds: float) -> str:
+    """Format seconds as HH:MM:SS (rounded)."""
+    try:
+        s = int(round(float(seconds)))
+    except Exception:
+        return "NA"
+    if s < 0:
+        s = 0
+    h = s // 3600
+    m = (s % 3600) // 60
+    sec = s % 60
+    return f"{h:02d}:{m:02d}:{sec:02d}"
+
+
+def _timing_summary_lines(title: str, totals: Dict[str, float], top_k: int = 12) -> List[str]:
+    """Return a compact timing summary line (largest first)."""
+    if not totals:
+        return [f"{title}: (no timings collected)"]
+    items = sorted(((str(k), float(v)) for k, v in totals.items()), key=lambda kv: kv[1], reverse=True)
+    shown = items[: max(1, int(top_k))]
+    parts = [f"{k}={_fmt_hms(v)}" for k, v in shown]
+    more = "" if len(items) <= len(shown) else f" (+{len(items) - len(shown)} more)"
+    total_all = sum(v for _, v in items)
+    return [f"{title}: total={_fmt_hms(total_all)}; " + ", ".join(parts) + more]
+
+
+def _rmtree_with_retries(path: Path, retries: int = 8, base_sleep_s: float = 0.3) -> None:
+    """Robust rmtree for Windows.
+
+    Handles transient "directory not empty" / permission errors that can happen
+    when a previous run crashed and left temporary shard files behind, or when
+    the OS is still releasing file handles.
+    """
+    path = Path(path)
+    if not path.exists():
+        return
+
+    def _onerror(func, p, exc_info):  # type: ignore[no-untyped-def]
+        try:
+            os.chmod(p, 0o666)
+        except Exception:
+            pass
+        try:
+            func(p)
+        except Exception:
+            pass
+
+    last_err: Exception | None = None
+    for i in range(int(retries)):
+        try:
+            shutil.rmtree(path, onerror=_onerror)
+            return
+        except Exception as e:
+            last_err = e
+            time.sleep(base_sleep_s * (2**i))
+    if last_err is not None:
+        raise last_err
+
+
+def _window_roll_name(i: int) -> str:
+    return f"roll_{i:03d}"
+
+
+def _build_rep_configs(cfg: Dict) -> List[RepConfig]:
+    reps: List[RepConfig] = []
+    for name, rep in (cfg.get("representations", {}) or {}).items():
+        reps.append(
+            RepConfig(
+                name=name,
+                features=rep.get("features", []),
+                windows=rep.get("windows", {}) or {},
+                drop_features=rep.get("drop_features", None),
+                standardization=rep.get("standardization", None),
+                asset_filter=rep.get("asset_filter", None),
+            )
+        )
+    if not reps:
+        raise ValueError("No representations configured.")
+    return reps
