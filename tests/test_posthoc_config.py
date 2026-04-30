@@ -1,6 +1,6 @@
 import pytest
 
-from posthoc_ami_vi_perm import _resolve_run_defs
+from src.experiments.posthoc_ami_vi_perm import _resolve_run_defs
 
 
 class TestResolveRunDefs:

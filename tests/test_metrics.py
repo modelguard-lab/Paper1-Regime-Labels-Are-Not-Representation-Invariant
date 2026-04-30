@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from metrics import align_states, temporal_disjoint_metrics, variation_of_information
+from src.core.metrics import align_states, temporal_disjoint_metrics, variation_of_information
 
 
 class TestAlignStates:

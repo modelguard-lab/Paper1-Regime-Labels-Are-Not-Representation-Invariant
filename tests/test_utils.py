@@ -1,6 +1,6 @@
 import pytest
 
-from utils import assets_from_cfg, enabled_models_from_cfg, reps_from_cfg
+from src.core.utils import assets_from_cfg, enabled_models_from_cfg, reps_from_cfg
 
 
 class TestRepsFromCfg:

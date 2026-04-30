@@ -574,7 +574,7 @@ def update_main_tex_tables(outputs_dir: Path, tex_path: Path, cfg: Dict) -> None
     # Restrict to cfg.assets (safe_name-normalised) so diagnostic dirs
     # (e.g., synthetic_sanity/) do not contaminate 4-asset aggregates.
     try:
-        from utils import assets_from_cfg, safe_name
+        from src.core.utils import assets_from_cfg, safe_name
         allowed = {safe_name(a) for a in assets_from_cfg(cfg)}
     except (KeyError, TypeError, ValueError):
         allowed = None
@@ -738,7 +738,7 @@ def update_empirical_results_md(outputs_dir: Path, md_path: Path, cfg: Dict) -> 
     steps = [int(s) for s in step_sweep] if isinstance(step_sweep, list) else []
 
     try:
-        from utils import assets_from_cfg, safe_name
+        from src.core.utils import assets_from_cfg, safe_name
         allowed = {safe_name(a) for a in assets_from_cfg(cfg)}
     except (KeyError, TypeError, ValueError):
         allowed = None

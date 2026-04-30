@@ -3,7 +3,7 @@ import math
 import numpy as np
 import pytest
 
-from runner import _matched_ordering_metrics, _matched_wasserstein_cost
+from src.workflows.pipeline import _matched_ordering_metrics, _matched_wasserstein_cost
 
 
 def _profile(mean, vol, cvar, downside_vol=None, var_alpha=None, n=100):

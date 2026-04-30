@@ -10,8 +10,8 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import adjusted_rand_score
 
-from features import RepConfig
-from plots import plot_synth_ari_vs_step_by_model
+from src.core.features import RepConfig
+from src.visualization.plots import plot_synth_ari_vs_step_by_model
 
 logger = logging.getLogger(__name__)
 
@@ -203,7 +203,7 @@ def run_synthetic_sanity_check(cfg: Dict, outputs_dir: Path) -> None:
     """
     Run a one-page synthetic sanity check and write artifacts under outputs/synthetic_sanity/.
     """
-    from runner import _run_single_asset  # local import to avoid circular import at module load
+    from src.workflows.pipeline import _run_single_asset  # local import to avoid circular import at module load
 
     synth_cfg = cfg.get("synthetic_sanity") or {}
     if not bool(synth_cfg.get("enabled", False)):

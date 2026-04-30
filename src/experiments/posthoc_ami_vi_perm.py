@@ -605,7 +605,7 @@ def main(cfg: Optional[Dict] = None) -> None:
 
     # Restrict to cfg.assets (safe_name-normalised) to avoid pulling in diagnostic
     # subdirs like synthetic_sanity/ that contaminate 4-asset aggregates.
-    from utils import assets_from_cfg, safe_name
+    from src.core.utils import assets_from_cfg, safe_name
     allowed_assets = {safe_name(a) for a in assets_from_cfg(cfg)}
 
     asset_dirs = sorted(

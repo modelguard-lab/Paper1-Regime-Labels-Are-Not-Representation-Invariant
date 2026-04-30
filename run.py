@@ -23,12 +23,6 @@ from pathlib import Path
 
 PROJECT_DIR = Path(__file__).resolve().parent
 
-# Paper 1 modules use bare imports (from data import ...) that rely on
-# src/ being on sys.path.  Keep this for backward compatibility.
-_SRC_DIR = PROJECT_DIR / "src"
-if str(_SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(_SRC_DIR))
-
 from src.commands.cli_registry import COMMANDS, run_module_command
 
 ALL_EXPERIMENT_COMMANDS: tuple[str, ...] = (
@@ -37,6 +31,11 @@ ALL_EXPERIMENT_COMMANDS: tuple[str, ...] = (
     "posthoc_ami",
     "posthoc_synthetic",
     "posthoc_var_spread",
+    "posthoc_rank_aligned_ordering",
+    "posthoc_convergence_audit",
+    "posthoc_kmeans_robustness",
+    "posthoc_repr_decomp",
+    "posthoc_stationarity_null",
     "paper_autofill",
     "aggregate",
 )
@@ -55,7 +54,7 @@ def _run_pipeline() -> None:
     from src.core.runtime import configure_console_logging, set_thread_env_defaults
     configure_console_logging()
     set_thread_env_defaults(1)
-    from src.runner import run
+    from src.workflows.pipeline import run
     config_path = PROJECT_DIR / "config.yaml"
     run(config_path)
 

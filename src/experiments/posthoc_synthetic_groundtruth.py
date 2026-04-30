@@ -20,9 +20,9 @@ from sklearn.metrics import adjusted_rand_score
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from features import RepConfig, build_representation_single
-from models import fit_hmm, fit_gmm
-from synthetic_sanity import SynthParams, generate_synthetic_price_and_truth
+from src.core.features import RepConfig, build_representation_single
+from src.core.models import fit_hmm, fit_gmm
+from src.experiments.synthetic_sanity import SynthParams, generate_synthetic_price_and_truth
 
 logger = logging.getLogger(__name__)
 

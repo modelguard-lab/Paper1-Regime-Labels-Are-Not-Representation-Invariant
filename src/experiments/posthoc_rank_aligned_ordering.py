@@ -37,8 +37,8 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from data import load_price_series
-from utils import assets_from_cfg, enabled_models_from_cfg, reps_from_cfg, safe_name
+from src.core.data import load_price_series
+from src.core.utils import assets_from_cfg, enabled_models_from_cfg, reps_from_cfg, safe_name
 
 logger = logging.getLogger(__name__)
 

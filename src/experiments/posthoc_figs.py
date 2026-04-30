@@ -8,14 +8,14 @@ import sys
 
 import pandas as pd
 
-from plots import (
+from src.visualization.plots import (
     plot_ari_gap_distribution_from_key_results,
     plot_disagreement_timeseries,
     plot_pairwise_matrix_heatmap,
     plot_model_split_grouped_bar_from_key_results,
     plot_representation_failure_matrix,
 )
-from utils import reps_from_cfg
+from src.core.utils import reps_from_cfg
 
 
 logger = logging.getLogger(__name__)

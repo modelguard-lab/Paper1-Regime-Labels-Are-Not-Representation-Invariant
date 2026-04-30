@@ -16,7 +16,7 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from utils import assets_from_cfg, enabled_models_from_cfg, reps_from_cfg
+from src.core.utils import assets_from_cfg, enabled_models_from_cfg, reps_from_cfg
 
 logger = logging.getLogger(__name__)
 
