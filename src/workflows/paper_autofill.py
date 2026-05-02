@@ -716,6 +716,69 @@ def update_main_tex_tables(outputs_dir: Path, tex_path: Path, cfg: Dict) -> None
             text,
         )
 
+    # Per-asset perm/CBB/BH supplementary table (Supplementary Table tab:perm_per_asset).
+    # We keep the column layout fixed and rewrite each asset's row from key_results.csv,
+    # so that re-running posthoc_ami flows through to the manuscript without manual edits.
+    perm_rows: List[Dict[str, float]] = []
+    for asset, step, p in _iter_asset_step_key_results(outputs_dir, allowed_assets=allowed):
+        if step is None or int(step) != baseline_step:
+            continue
+        df = _read_key_results(p)
+
+        def _g(metric: str) -> float | None:
+            v = _get_metric(df, metric, "all")
+            if v is None or (isinstance(v, float) and math.isnan(v)):
+                return None
+            return float(v)
+
+        perm_rows.append(
+            {
+                "asset": asset,
+                "obs": _g("cross_rep_ari_mean"),
+                "perm_med": _g("crossrep_ari_perm_perpair_median"),
+                "perm_bh_q05": _g("crossrep_ari_perm_perpair_bh_q05_frac"),
+                "cbb_med": _g("crossrep_ari_cbb_perpair_median"),
+                "cbb_bh_q05": _g("crossrep_ari_cbb_perpair_bh_q05_frac"),
+                "cbb_block": _g("crossrep_ari_cbb_block_median"),
+            }
+        )
+
+    if perm_rows:
+        # Rewrite asset rows inside the tab:perm_per_asset block only — the
+        # asset names also appear in many other tables, so a global regex would
+        # corrupt the wrong row. We splice the tabular block, edit it, and
+        # paste it back.
+        # Layout: Asset & Mean ARI & Median $p_{\text{perm}}$ & \% BH $q<0.05$ &
+        #         Median $p_{\text{CBB}}$ & \% CBB BH $q<0.05$ & median block \\
+        block_pat = re.compile(
+            r"(\\label\{tab:perm_per_asset\}.*?\\bottomrule)",
+            flags=re.DOTALL,
+        )
+        block_match = block_pat.search(text)
+        if block_match:
+            block = block_match.group(1)
+            for r in perm_rows:
+                asset = r["asset"]
+                obs = _fmt(r["obs"]) if r["obs"] is not None else "NA"
+                pm = _fmt(r["perm_med"]) if r["perm_med"] is not None else "NA"
+                pbh = _fmt(100.0 * r["perm_bh_q05"], nd=1) if r["perm_bh_q05"] is not None else "NA"
+                cm = _fmt(r["cbb_med"]) if r["cbb_med"] is not None else "NA"
+                cbh = _fmt(100.0 * r["cbb_bh_q05"], nd=1) if r["cbb_bh_q05"] is not None else "NA"
+                blk = (
+                    _fmt(int(round(r["cbb_block"]))) if r["cbb_block"] is not None else "NA"
+                )
+                new_line = (
+                    f"{asset} & {obs} & {pm} & {pbh} & {cm} & {cbh} & {blk} \\\\"
+                )
+                block = re.sub(
+                    rf"^\s*{re.escape(asset)}\s*&[^\n]*?\\\\\s*$",
+                    lambda _m, repl=new_line: repl,
+                    block,
+                    count=1,
+                    flags=re.MULTILINE,
+                )
+            text = text[: block_match.start(1)] + block + text[block_match.end(1) :]
+
     tex_path.write_text(text, encoding="utf-8")
 
 
@@ -790,7 +853,8 @@ def main(cfg: Optional[Dict] = None) -> None:
     import logging as _logging
     _logger = _logging.getLogger("paper_autofill")
 
-    project_dir = Path(__file__).resolve().parents[1]
+    # Project root is two levels above this file (src/workflows/<this>.py).
+    project_dir = Path(__file__).resolve().parents[2]
     outputs_dir = project_dir / "outputs"
 
     if cfg is None:

@@ -32,7 +32,8 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Project paths
 # ---------------------------------------------------------------------------
-ROOT = Path(__file__).resolve().parent.parent
+# Project root is two levels above this file (src/experiments/<this>.py).
+ROOT = Path(__file__).resolve().parents[2]
 OUTPUTS_DIR = ROOT / "outputs"
 # REPS and MODELS are intentionally not defined at module level: they must be
 # sourced from config.yaml via _resolve_run_defs(cfg). Hardcoded module-level
@@ -42,6 +43,12 @@ K_DEFAULT = 3
 N_PERM = 99  # min p = 1/100 = 0.01 < 0.05; sufficient for paper's p<0.05 claim
 PERM_SEED = 42
 PERM_MAX_PAIRS = 2000  # subsample for speed; all pairs have p << 0.05 trivially
+# CBB null: Politis-Romano (1992) circular block bootstrap. Block length is
+# selected per-pair via Patton-Politis-White (2009) optimal length, with a
+# T**(1/3) fallback when the selector is unavailable or fails on degenerate
+# (single-state) sequences.
+CBB_FALLBACK_EXP = 1.0 / 3.0
+BH_Q_LEVELS = (0.05, 0.10)  # Benjamini-Hochberg significance levels reported
 
 
 def _parallel_or_sequential(func, args_list, n_jobs, label="parallel"):
@@ -300,6 +307,104 @@ def _perm_one_pair(
     return {"obs": obs, "exceed": exceed, "pval": pval}
 
 
+# ---------------------------------------------------------------------------
+# Politis-Romano circular block bootstrap null
+# ---------------------------------------------------------------------------
+
+def _ppw_block_length(x: np.ndarray) -> int:
+    """Patton-Politis-White (2009) optimal circular block length.
+
+    Falls back to ``ceil(T**(1/3))`` when the ``arch`` selector is unavailable
+    or fails (e.g., on a constant single-state sequence). Lower-bounded at 2.
+    """
+    T = int(len(x))
+    fallback = max(2, int(np.ceil(T ** CBB_FALLBACK_EXP)))
+    if T < 8:
+        return fallback
+    try:
+        from arch.bootstrap import optimal_block_length
+        # PPW is undefined on a constant series; short-circuit.
+        if np.unique(x).size <= 1:
+            return fallback
+        df = optimal_block_length(np.asarray(x, dtype=float))
+        b = float(df["circular"].iloc[0])
+        if not np.isfinite(b) or b < 1.0:
+            return fallback
+        return max(2, min(int(np.ceil(b)), max(2, T // 2)))
+    except Exception:
+        return fallback
+
+
+def _cbb_resample(x: np.ndarray, block: int, rng: np.random.Generator) -> np.ndarray:
+    """Single circular block bootstrap sample of length ``len(x)``.
+
+    Politis-Romano (1992): random block start, fixed block length, circular
+    indexing so the sequence wraps around. Preserves within-series
+    autocorrelation; randomises alignment with the partner labelling.
+    """
+    T = int(len(x))
+    if T == 0:
+        return x.copy()
+    block = max(1, min(int(block), T))
+    n_blocks = int(np.ceil(T / block))
+    starts = rng.integers(0, T, size=n_blocks)
+    out = np.empty(T, dtype=x.dtype)
+    pos = 0
+    for s in starts:
+        take = min(block, T - pos)
+        idx = (int(s) + np.arange(take)) % T
+        out[pos:pos + take] = x[idx]
+        pos += take
+        if pos >= T:
+            break
+    return out
+
+
+def _cbb_one_pair(
+    a: np.ndarray, b: np.ndarray, n_perm: int, seed: int,
+) -> Dict[str, float]:
+    """CBB null for one pair: preserve b's autocorrelation, randomise alignment.
+
+    The block length is chosen per-pair from b's PPW optimum (a is held fixed).
+    Returns the observed ARI, exceedance count, p-value, and block length used.
+    """
+    rng = np.random.default_rng(seed)
+    obs = float(adjusted_rand_score(a, b))
+    block = _ppw_block_length(b)
+    exceed = sum(
+        1 for _ in range(n_perm)
+        if float(adjusted_rand_score(a, _cbb_resample(b, block, rng))) >= obs
+    )
+    pval = (exceed + 1) / (n_perm + 1)
+    return {"obs": obs, "exceed": exceed, "pval": pval, "block": float(block)}
+
+
+# ---------------------------------------------------------------------------
+# Multiple-comparison correction
+# ---------------------------------------------------------------------------
+
+def _bh_fdr_adjust(pvals: np.ndarray) -> np.ndarray:
+    """Benjamini-Hochberg (1995) step-up adjusted p-values (q-values).
+
+    Returns the BH-adjusted p-values in the original input order, monotonised
+    from largest to smallest and clipped to [0, 1]. Compare against the chosen
+    q-level to identify discoveries (e.g., ``q < 0.05``).
+    """
+    p = np.asarray(pvals, dtype=float).ravel()
+    n = p.size
+    if n == 0:
+        return p
+    order = np.argsort(p)
+    ranked = p[order]
+    adj = ranked * n / np.arange(1, n + 1, dtype=float)
+    # enforce monotonicity from largest to smallest (BH step-up)
+    adj = np.minimum.accumulate(adj[::-1])[::-1]
+    adj = np.clip(adj, 0.0, 1.0)
+    out = np.empty(n, dtype=float)
+    out[order] = adj
+    return out
+
+
 def aggregate_permutation_pvalue(
     hard_map: Dict[Tuple[str, str, int, str], pd.Series],
     reps: List[str],
@@ -383,12 +488,67 @@ def aggregate_permutation_pvalue(
             float(np.max(per_pair_pvals)), len(per_pair_pvals),
         )
 
+    # --- Politis-Romano circular block bootstrap null on the same pairs ---
+    # PPW-selected block length per pair preserves within-series autocorrelation,
+    # addressing the "structural inflation" of the iid permutation null on
+    # rolling-window label sequences.
+    cbb_args = [(a, b, n_perm, seed + 100_000 + i) for i, (a, b) in enumerate(pair_data)]
+    cbb_results = _parallel_or_sequential(_cbb_one_pair, cbb_args, n_jobs, "CBB null")
+
+    cbb_total_exceed = sum(r["exceed"] + 1 for r in cbb_results)
+    cbb_total_trials = len(cbb_results) * (n_perm + 1)
+    cbb_pvalue = cbb_total_exceed / cbb_total_trials
+    cbb_per_pair_pvals = [r["pval"] for r in cbb_results]
+    cbb_blocks = [r["block"] for r in cbb_results]
+
+    if cbb_per_pair_pvals:
+        logger.info(
+            "  CBB null: mean_obs_ARI=%.4f, aggregate p-value=%.6f "
+            "(n_pairs=%d, block median=%.1f, range=[%.0f, %.0f])",
+            mean_obs, cbb_pvalue, len(cbb_per_pair_pvals),
+            float(np.median(cbb_blocks)), float(np.min(cbb_blocks)), float(np.max(cbb_blocks)),
+        )
+        logger.info(
+            "  CBB per-pair p-values: min=%.4f, median=%.4f, max=%.4f",
+            float(np.min(cbb_per_pair_pvals)), float(np.median(cbb_per_pair_pvals)),
+            float(np.max(cbb_per_pair_pvals)),
+        )
+
+    # --- Benjamini-Hochberg multiple-comparison correction ---
+    # Applied independently to perm and CBB per-pair p-value vectors.
+    perm_arr = np.asarray(per_pair_pvals, dtype=float)
+    cbb_arr = np.asarray(cbb_per_pair_pvals, dtype=float)
+    perm_q = _bh_fdr_adjust(perm_arr) if perm_arr.size else perm_arr
+    cbb_q = _bh_fdr_adjust(cbb_arr) if cbb_arr.size else cbb_arr
+    n_perm_pairs = perm_arr.size
+    n_cbb_pairs = cbb_arr.size
+
     result: Dict[str, float] = {"pvalue_all": pvalue, "obs_ari": mean_obs}
     if per_pair_pvals:
         result["pvalue_perpair_min"] = float(np.min(per_pair_pvals))
         result["pvalue_perpair_median"] = float(np.median(per_pair_pvals))
         result["pvalue_perpair_max"] = float(np.max(per_pair_pvals))
         result["pvalue_perpair_n"] = float(len(per_pair_pvals))
+        for q in BH_Q_LEVELS:
+            tag = str(int(round(q * 100))).zfill(2)
+            result[f"pvalue_perpair_bh_q{tag}_frac"] = float(np.mean(perm_q < q))
+        # Bonferroni as conservative upper bound (raw p * n < alpha).
+        result["pvalue_perpair_bonf_q05_frac"] = float(np.mean(perm_arr * n_perm_pairs < 0.05))
+
+    if cbb_per_pair_pvals:
+        result["cbb_pvalue_all"] = cbb_pvalue
+        result["cbb_pvalue_perpair_min"] = float(np.min(cbb_per_pair_pvals))
+        result["cbb_pvalue_perpair_median"] = float(np.median(cbb_per_pair_pvals))
+        result["cbb_pvalue_perpair_max"] = float(np.max(cbb_per_pair_pvals))
+        result["cbb_pvalue_perpair_n"] = float(len(cbb_per_pair_pvals))
+        result["cbb_block_median"] = float(np.median(cbb_blocks))
+        result["cbb_block_min"] = float(np.min(cbb_blocks))
+        result["cbb_block_max"] = float(np.max(cbb_blocks))
+        for q in BH_Q_LEVELS:
+            tag = str(int(round(q * 100))).zfill(2)
+            result[f"cbb_pvalue_perpair_bh_q{tag}_frac"] = float(np.mean(cbb_q < q))
+        result["cbb_pvalue_perpair_bonf_q05_frac"] = float(np.mean(cbb_arr * n_cbb_pairs < 0.05))
+
     return result
 
 
@@ -492,6 +652,27 @@ def process_asset_step(
         key = f"pvalue_{suffix}"
         if key in perm_result and not np.isnan(perm_result[key]):
             _add(f"crossrep_ari_perm_{suffix}", "all", perm_result[key])
+    # BH-FDR + Bonferroni fractions on the iid-permutation per-pair p-values.
+    for suffix in (
+        "perpair_bh_q05_frac", "perpair_bh_q10_frac", "perpair_bonf_q05_frac",
+    ):
+        key = f"pvalue_{suffix}"
+        if key in perm_result and not np.isnan(perm_result[key]):
+            _add(f"crossrep_ari_perm_{suffix}", "all", perm_result[key])
+    # Politis-Romano circular block bootstrap null (preserves autocorrelation).
+    if not np.isnan(perm_result.get("cbb_pvalue_all", float("nan"))):
+        _add("crossrep_ari_cbb_pvalue", "all", perm_result["cbb_pvalue_all"])
+    for suffix in (
+        "perpair_min", "perpair_median", "perpair_max", "perpair_n",
+        "perpair_bh_q05_frac", "perpair_bh_q10_frac", "perpair_bonf_q05_frac",
+    ):
+        key = f"cbb_pvalue_{suffix}"
+        if key in perm_result and not np.isnan(perm_result[key]):
+            _add(f"crossrep_ari_cbb_{suffix}", "all", perm_result[key])
+    for suffix in ("median", "min", "max"):
+        key = f"cbb_block_{suffix}"
+        if key in perm_result and not np.isnan(perm_result[key]):
+            _add(f"crossrep_ari_cbb_block_{suffix}", "all", perm_result[key])
 
     # --- Update key_results.csv ---
     if key_results_path.exists() and new_rows:

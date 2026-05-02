@@ -46,7 +46,8 @@ from sklearn.metrics import adjusted_rand_score
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
-ROOT = Path(__file__).resolve().parent.parent
+# Project root is two levels above this file (src/experiments/<this>.py).
+ROOT = Path(__file__).resolve().parents[2]
 OUTPUTS_DIR = ROOT / "outputs"
 
 
@@ -192,11 +193,12 @@ def main() -> None:
     # Match the main pipeline subset: drop rep_e for non-SPX (asset_filter handled per-asset below).
     K = 3
     seeds = [1, 2, 3, 4, 5]
-    # Spectral clustering on 252-day windows is expensive (eigendecomposition of
-    # k-NN affinity); k-means alone provides the non-parametric / centroid-based
-    # comparison the reviewer asked for. Spectral can be re-enabled by appending
-    # "spectral" but expect ~30+ min total runtime for the full sweep.
-    methods = ["kmeans"]
+    # Two non-parametric benchmarks: k-means (centroid only) and spectral
+    # clustering (eigendecomposition of k-NN affinity, no parametric emissions
+    # and no Euclidean centroid assumption). Spectral is the stronger test
+    # for FRL-Reviewer-2's question about models that do not impose discrete
+    # parametric structure.
+    methods = ["kmeans", "spectral"]
 
     all_rows: List[Dict] = []
     for asset in assets:
