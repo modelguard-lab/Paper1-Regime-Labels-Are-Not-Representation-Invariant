@@ -10,6 +10,7 @@ COMMANDS: dict[str, str] = {
     "posthoc_ami": "src.experiments.posthoc_ami_vi_perm",
     "posthoc_synthetic": "src.experiments.posthoc_synthetic_groundtruth",
     "posthoc_synthetic_psweep": "src.experiments.posthoc_synthetic_psweep",
+    "posthoc_synthetic_ksweep": "src.experiments.posthoc_synthetic_ksweep",
     "posthoc_var_spread": "src.experiments.posthoc_var_spread",
     "posthoc_rank_aligned_ordering": "src.experiments.posthoc_rank_aligned_ordering",
     "posthoc_convergence_audit": "src.experiments.posthoc_convergence_audit",

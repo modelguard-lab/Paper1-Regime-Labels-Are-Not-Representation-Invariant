@@ -21,7 +21,7 @@ class SynthParams:
     T: int = 2200
     K: int = 3
     persistence_p: float = 0.97
-    sigmas: Tuple[float, float, float] = (0.006, 0.012, 0.024)  # daily vol levels (log-return scale)
+    sigmas: Tuple[float, ...] = (0.006, 0.012, 0.024)  # daily vol levels (log-return scale)
     drift_alpha: float = 0.6  # multiplicative drift in volatility scale
     start_date: str = "2000-01-03"
 

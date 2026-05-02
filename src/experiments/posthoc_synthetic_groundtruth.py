@@ -50,6 +50,7 @@ def run_synthetic_groundtruth(
     W: int = 252,
     T: int = 2200,
     persistence_p: float = 0.97,
+    sigmas: tuple[float, ...] | None = None,
 ) -> pd.DataFrame:
     """Run the synthetic ground-truth experiment.
 
@@ -61,7 +62,10 @@ def run_synthetic_groundtruth(
     - ari_vs_truth: ARI of inferred labels vs ground truth
     - ari_cross_rep: mean ARI vs other representations (same fit_seed)
     """
-    params = SynthParams(T=T, K=K, persistence_p=persistence_p, drift_alpha=0.6)
+    sp_kwargs: dict = {"T": T, "K": K, "persistence_p": persistence_p, "drift_alpha": 0.6}
+    if sigmas is not None:
+        sp_kwargs["sigmas"] = sigmas
+    params = SynthParams(**sp_kwargs)
     reps = _default_reps()
     records = []
 
