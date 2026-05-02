@@ -157,10 +157,6 @@ These additions strengthen the per-pair claim with appropriate dependence and mu
 
 ---
 
-## Summary of word count
-
-The revised main text is **2,499 words** (FRL 2,500-word limit), excluding abstract, references, tables, figures and captions, acknowledgements, declarations, and supplementary material. Supplementary material totals 18 pages (S1–S13).
-
 We hope these revisions address all reviewer concerns. We are happy to make further changes in response to a second round of review.
 
 Yours sincerely,
