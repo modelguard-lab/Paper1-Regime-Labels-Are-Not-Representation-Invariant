@@ -44,7 +44,7 @@ def align_states(reference: np.ndarray, target: np.ndarray, n_states: int) -> np
     Not used by stability_metrics/temporal_disjoint_metrics: ARI/NMI/AMI/VI are
     all label-permutation-invariant and the raw labels are compared directly.
     This helper exists for downstream consumers that DO need a label-matched
-    sequence — e.g., per-state risk-profile comparison (_matched_ordering_metrics
+    sequence, e.g., per-state risk-profile comparison (_matched_ordering_metrics
     in runner.py), state-level Wasserstein alignment (_matched_wasserstein_cost),
     and any figure that overlays two state sequences on the same color scale.
     """

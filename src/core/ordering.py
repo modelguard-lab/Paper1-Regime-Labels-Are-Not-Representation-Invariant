@@ -189,7 +189,7 @@ def _ordering_one_seed(
     rolls: List[str],
     alpha: float,
 ) -> Dict:
-    """Compute ordering consistency for one (model, seed) — parallelisable unit."""
+    """Compute ordering consistency for one (model, seed); parallelisable unit."""
     top_sum = 0.0; top_n = 0
     sp_sum = 0.0; sp_n = 0
     sign_sum = 0.0; sign_n = 0
@@ -394,7 +394,7 @@ def _temporal_ordering_one_seed(
     rolls: List[str],
     alpha: float,
 ) -> List[Dict]:
-    """Compute temporal ordering consistency for one (model, seed) — parallelisable."""
+    """Compute temporal ordering consistency for one (model, seed); parallelisable."""
     records: List[Dict] = []
     top_sum_all = 0.0; top_n_all = 0
     sp_sum_all = 0.0; sp_n_all = 0

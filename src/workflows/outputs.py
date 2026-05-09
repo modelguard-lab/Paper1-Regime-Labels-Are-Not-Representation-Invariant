@@ -520,7 +520,7 @@ def _write_key_outputs(
             break
 
     lines = [
-        "# Paper 1 — Unified Run Analysis",
+        "# Paper 1: Unified Run Analysis",
         "",
         f"- **scores_summary rows**: {len(scores)}",
         f"- **stability_summary rows**: {len(stability)}",

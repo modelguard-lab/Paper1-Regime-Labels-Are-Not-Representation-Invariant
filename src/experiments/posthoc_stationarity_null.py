@@ -229,7 +229,7 @@ _REP_PAIRS: List[Tuple[str, str, int, int, int, int, int, int, int, int]] = [
     # pair 1: window only (rep_a vs rep_c1 analog)
     ("rep_a_vs_rep_c1", 20, 60, 60, 120, 30, 90, 90, 120),
     # pair 2: same windows, no standardisation vs z-score (rep_a vs rep_a_unscaled analog)
-    # handled separately — just use raw features for rep_b
+    # handled separately; just use raw features for rep_b
 ]
 
 

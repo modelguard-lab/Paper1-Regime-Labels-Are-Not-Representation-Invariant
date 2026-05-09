@@ -8,6 +8,8 @@ orchestration.
 
 Functions:
   _fit_one                        single GMM / HMM fit
+  _build_window                   slice the panel into a date-indexed DataFrame
+  _fit_and_summarise              fit + attach semantic-drift summary stats
   _fit_slice_collect              fit across reps / models for one slice
   _append_csv_row                 generic CSV row appender
   _fit_slice_write_shard          fit + immediate shard write
@@ -17,7 +19,9 @@ Functions:
 from __future__ import annotations
 
 import csv
+import json
 import logging
+import os
 import time
 from pathlib import Path
 from typing import Dict, List, Tuple
@@ -28,8 +32,10 @@ from joblib import Parallel, delayed
 from joblib.externals.loky.process_executor import TerminatedWorkerError
 
 from src.core.features import RepConfig, build_representation_single
+from src.core.metrics import semantic_drift
 from src.core.models import fit_gmm, fit_hmm
-from src.core.utils import ensure_dir, safe_name
+from src.core.runtime import configure_global_file_logging
+from src.core.utils import _rmtree_with_retries, ensure_dir, safe_name
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +64,42 @@ def _fit_one(
     return res.states_hard, res.states_soft, res.model_params, res.scores
 
 
+def _build_window(
+    X_values: np.ndarray,
+    X_index_values: np.ndarray,
+    X_columns: List[str],
+    start: int,
+    end: int,
+) -> pd.DataFrame:
+    """Slice the panel and build a DataFrame with a date index."""
+    idx = pd.to_datetime(X_index_values[start:end])
+    window_X = pd.DataFrame(X_values[start:end], index=idx, columns=X_columns)
+    window_X.index.name = "date"
+    return window_X
+
+
+def _fit_and_summarise(
+    model_name: str,
+    window_X: pd.DataFrame,
+    k: int,
+    seed: int,
+    model_cfg: Dict,
+):
+    """Run a single fit and attach semantic-drift summary stats to scores.
+
+    Returns the same tuple as ``_fit_one`` plus the per-state drift series:
+    (hard, soft, params, scores_with_drift, drift).
+    """
+    hard, soft, params, scores = _fit_one(model_name, window_X, k, seed, model_cfg)
+    drift = semantic_drift(window_X, hard, list(window_X.columns))
+    scores = {
+        **(scores or {}),
+        "semantic_drift_mean": float(drift.mean()) if not drift.empty else float("nan"),
+        "semantic_drift_std": float(drift.std()) if not drift.empty else float("nan"),
+    }
+    return hard, soft, params, scores, drift
+
+
 def _fit_slice_collect(
     model_name: str,
     X_values: np.ndarray,
@@ -72,17 +114,11 @@ def _fit_slice_collect(
     w: int,
     model_cfg: Dict,
 ) -> Dict:
-    idx = pd.to_datetime(X_index_values[start:end])
-    window_X = pd.DataFrame(X_values[start:end], index=idx, columns=X_columns)
-    window_X.index.name = "date"
+    window_X = _build_window(X_values, X_index_values, X_columns, start, end)
     try:
-        hard, soft, params, scores = _fit_one(model_name, window_X, k, seed, model_cfg)
-        drift = semantic_drift(window_X, hard, list(window_X.columns))
-        scores = {
-            **(scores or {}),
-            "semantic_drift_mean": float(drift.mean()) if not drift.empty else float("nan"),
-            "semantic_drift_std": float(drift.std()) if not drift.empty else float("nan"),
-        }
+        hard, soft, params, scores, drift = _fit_and_summarise(
+            model_name, window_X, k, seed, model_cfg
+        )
         return {
             "ok": True,
             "rep": rep_name,
@@ -163,18 +199,12 @@ def _fit_slice_write_shard(
         pass
 
     pid = os.getpid()
-    idx = pd.to_datetime(X_index_values[start:end])
-    window_X = pd.DataFrame(X_values[start:end], index=idx, columns=X_columns)
-    window_X.index.name = "date"
+    window_X = _build_window(X_values, X_index_values, X_columns, start, end)
 
     try:
-        hard, soft, params, scores = _fit_one(model_name, window_X, k, seed, model_cfg)
-        drift = semantic_drift(window_X, hard, list(window_X.columns))
-        scores = {
-            **(scores or {}),
-            "semantic_drift_mean": float(drift.mean()) if not drift.empty else float("nan"),
-            "semantic_drift_std": float(drift.std()) if not drift.empty else float("nan"),
-        }
+        hard, soft, params, scores, drift = _fit_and_summarise(
+            model_name, window_X, k, seed, model_cfg
+        )
 
         m = str(model_name)
 
@@ -432,3 +462,4 @@ def _run_parallel_sharded_fits(
         except Exception:
             logger.exception("Threading retry failed; falling back to sequential. asset=%s", asset)
             _reset_shard_dir("sequential")
+            return _run_seq()

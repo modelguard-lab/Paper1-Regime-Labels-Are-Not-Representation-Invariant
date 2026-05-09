@@ -296,7 +296,7 @@ def temporal_records(
 def _perm_one_pair(
     a: np.ndarray, b: np.ndarray, n_perm: int, seed: int,
 ) -> Dict[str, float]:
-    """Permutation test for one pair — parallelisable unit."""
+    """Permutation test for one pair; parallelisable unit."""
     rng = np.random.default_rng(seed)
     obs = float(adjusted_rand_score(a, b))
     exceed = sum(
@@ -465,7 +465,7 @@ def aggregate_permutation_pvalue(
 
     logger.info("  Permutation test: %d pairs, n_perm=%d, n_jobs=%d", len(pair_data), n_perm, n_jobs)
 
-    # Parallel permutation tests — each pair gets a unique seed
+    # Parallel permutation tests; each pair gets a unique seed
     perm_args = [(a, b, n_perm, seed + i) for i, (a, b) in enumerate(pair_data)]
     results = _parallel_or_sequential(_perm_one_pair, perm_args, n_jobs, "Permutation test")
 
@@ -688,7 +688,7 @@ def update_step_sweep_summary(
 
     If `allowed_assets` is provided (typically from cfg.assets via utils.safe_name),
     only those asset directories are included. Otherwise every subdirectory of
-    outputs_dir is included — which incorrectly pulls in diagnostic dirs like
+    outputs_dir is included, which incorrectly pulls in diagnostic dirs like
     synthetic_sanity/ and contaminates the 4-asset aggregates.
     """
     summary_path = outputs_dir / "step_sweep_summary.csv"

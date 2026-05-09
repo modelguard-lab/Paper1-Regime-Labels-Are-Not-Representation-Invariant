@@ -227,7 +227,7 @@ def main(cfg: Optional[Dict] = None) -> None:
                 sub = sub[pd.to_numeric(sub["seed"], errors="coerce") == seed]
                 if sub.empty:
                     continue
-                # Use all rolls — pick the one with the most dates
+                # Use all rolls; pick the one with the most dates
                 for roll_name, g in sub.groupby("roll"):
                     s = g.set_index("date")["state"].sort_index()
                     hard_map[(rep, model, seed, str(roll_name))] = s

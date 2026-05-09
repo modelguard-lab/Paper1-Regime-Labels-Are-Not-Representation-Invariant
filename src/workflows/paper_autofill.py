@@ -129,7 +129,7 @@ def _compute_model_split_block(
     if not per_asset:
         return "*(missing required baseline exports.)*"
 
-    # Means by model (across assets) — with seed-level CIs when available.
+    # Means by model (across assets), with seed-level CIs when available.
     rows = []
     for asset, df in per_asset.items():
         for model in ["gmm", "hmm"]:
@@ -245,7 +245,7 @@ def _compute_model_split_block(
             f"(max aggregate $p={_fmt(pvalue_max, nd=4)}$, one-sided)."
         )
     else:
-        pv_str = "*(permutation p-values not yet computed — run posthoc_ami_vi_perm.py)*"
+        pv_str = "*(permutation p-values not yet computed; run posthoc_ami_vi_perm.py)*"
     block.append(pv_str)
     block.append("")
     block.append(
@@ -744,7 +744,7 @@ def update_main_tex_tables(outputs_dir: Path, tex_path: Path, cfg: Dict) -> None
         )
 
     if perm_rows:
-        # Rewrite asset rows inside the tab:perm_per_asset block only — the
+        # Rewrite asset rows inside the tab:perm_per_asset block only; the
         # asset names also appear in many other tables, so a global regex would
         # corrupt the wrong row. We splice the tabular block, edit it, and
         # paste it back.

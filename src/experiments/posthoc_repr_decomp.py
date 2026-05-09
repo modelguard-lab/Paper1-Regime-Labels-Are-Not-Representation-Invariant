@@ -39,18 +39,18 @@ logger = logging.getLogger(__name__)
 
 # Each pair (a, b) with a < b (alphabetical) maps to a dimension label.
 _PAIR_DIMENSION: Dict[Tuple[str, str], str] = {
-    # Dimension I — standardization only (same features, same windows)
+    # Dimension I: standardization only (same features, same windows)
     ("rep_a", "rep_a_unscaled"): "dim_std",
 
-    # Dimension II — feature-subset, same windows (vol=20, dd=60, tail=60)
+    # Dimension II: feature-subset, same windows (vol=20, dd=60, tail=60)
     ("rep_a", "rep_c2"): "dim_feature",    # rep_a adds VaR  over rep_c2
     ("rep_a", "rep_c3"): "dim_feature",    # rep_a adds MaxDD over rep_c3
     ("rep_c2", "rep_c3"): "dim_feature",   # MaxDD vs VaR toggle
 
-    # Dimension III — window length only (same features [vol,dd,var,cvar])
+    # Dimension III: window length only (same features [vol,dd,var,cvar])
     ("rep_c1", "rep_c3"): "dim_window",
 
-    # Dimension IV — volatility estimator (GARCH vs rolling)
+    # Dimension IV: volatility estimator (GARCH vs rolling)
     ("rep_a", "rep_d"): "dim_estimator",
     ("rep_a_unscaled", "rep_d"): "dim_estimator",
     ("rep_c1", "rep_d"): "dim_estimator",

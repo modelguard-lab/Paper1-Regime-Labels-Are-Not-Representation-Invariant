@@ -110,8 +110,8 @@ def _compute_vix_level(vix: pd.Series, std_window: int = 120) -> pd.Series:
     """Raw VIX level, renamed for rep_e consumption.
 
     Previously this function applied a 120-day rolling z-score internally,
-    which — combined with rep_e's `standardization: rolling_zscore(window=120)`
-    at the rep level — produced a double-z-score. For matched windows the two
+    which (combined with rep_e's `standardization: rolling_zscore(window=120)`
+    at the rep level) produced a double-z-score. For matched windows the two
     applications are asymptotically idempotent (z(z(x)) ≈ z(x)), so historical
     numerics are not materially corrupted, but the transformation was
     misleading. We now return the raw level and let the rep-level standardizer
@@ -130,7 +130,15 @@ def _compute_vix_change(vix: pd.Series, window: int = 5) -> pd.Series:
 
 
 def _compute_vix_percentile(vix: pd.Series, window: int = 60) -> pd.Series:
-    """Rolling empirical percentile of VIX (0-1; high = extreme stress)."""
+    """Rolling empirical CDF of VIX at the current observation.
+
+    For each date t, returns ``sum(x_s <= x_t) / window`` over the trailing
+    ``window``-day window. The output is the empirical CDF value at the
+    current VIX level within that window: range ``[1/window, 1]`` (the
+    minimum value occurs when the current observation is the unique
+    minimum of the window). High values indicate extreme stress relative
+    to the recent past.
+    """
     def _pct(x: np.ndarray) -> float:
         return float(np.sum(x <= x[-1]) / len(x))
     return vix.rolling(window=window, min_periods=window).apply(_pct, raw=True).rename("vix_percentile")
@@ -197,12 +205,12 @@ def build_representation_single(
 
     feat_list = [vol, dd, mdd, var, cvar, skew, stab]
 
-    # GARCH conditional vol — only computed when requested (avoids arch import overhead)
+    # GARCH conditional vol; only computed when requested (avoids arch import overhead)
     if "garch_vol" in rep.features:
         gvol = _compute_garch_vol(r)
         feat_list.append(gvol)
 
-    # VIX-based features — require aux["^VIX"] to be provided
+    # VIX-based features; require aux["^VIX"] to be provided
     vix_features_needed = {"vix_level", "vix_change", "vix_percentile"}
     if vix_features_needed.intersection(rep.features):
         if aux is None or "^VIX" not in aux:

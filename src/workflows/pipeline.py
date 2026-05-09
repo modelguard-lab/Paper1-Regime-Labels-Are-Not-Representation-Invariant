@@ -18,8 +18,13 @@ visualisation in visualization.{representation_failure,disagreement,summary}.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+import os
+import platform
+import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Dict, List
@@ -47,6 +52,51 @@ configure_console_logging()
 set_thread_env_defaults(1)
 
 logger = logging.getLogger(__name__)
+
+
+def _try_git_sha(repo_dir: Path) -> str | None:
+    """Best-effort git HEAD SHA. Returns None if git is unavailable or repo is missing."""
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=str(repo_dir),
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        if out.returncode == 0:
+            return out.stdout.strip() or None
+    except Exception:
+        return None
+    return None
+
+
+def _config_sha256(config_path: Path) -> str | None:
+    """SHA-256 of the config file's bytes; None if file is missing."""
+    try:
+        with open(config_path, "rb") as f:
+            return hashlib.sha256(f.read()).hexdigest()
+    except Exception:
+        return None
+
+
+def _pinned_versions() -> Dict[str, str]:
+    """Versions of the small set of dependencies that drive numeric outputs."""
+    versions: Dict[str, str] = {}
+    for pkg in ("numpy", "pandas", "scipy", "scikit-learn", "hmmlearn", "arch", "joblib"):
+        try:
+            mod_name = "sklearn" if pkg == "scikit-learn" else pkg
+            mod = __import__(mod_name)
+            versions[pkg] = str(getattr(mod, "__version__", "unknown"))
+        except Exception:
+            versions[pkg] = "not_installed"
+    return versions
+
+
+def _thread_env_snapshot() -> Dict[str, str]:
+    keys = ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "NUMEXPR_NUM_THREADS")
+    return {k: os.environ.get(k, "") for k in keys}
 
 
 def _extract_metrics_from_key_results(p: Path) -> dict | None:
@@ -157,6 +207,12 @@ def run(config_path: Path) -> None:
             "download_start_date": download_start,
             "download_end_date": (download_end if download_end is not None else "today_utc"),
             "downloaded_missing_assets": missing,
+            "git_sha": _try_git_sha(Path(config_path).resolve().parent),
+            "python_version": sys.version.split()[0],
+            "platform": platform.platform(),
+            "pinned_versions": _pinned_versions(),
+            "config_sha256": _config_sha256(Path(config_path)),
+            "thread_env": _thread_env_snapshot(),
         }
         (outputs_dir / "run_manifest.json").write_text(
             json.dumps(manifest, indent=2),

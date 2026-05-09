@@ -259,7 +259,7 @@ def plot_representation_failure_matrix(
             extra_dd = float(dd_full.max())
 
     # =========================================================================
-    # Figure 1: Conflict view — two subplots
+    # Figure 1: Conflict view, two subplots
     #   Top (3/4 height): price line + two state-band strips
     #   Bottom (1/4 height): binary conflict indicator
     # =========================================================================
@@ -277,7 +277,7 @@ def plot_representation_failure_matrix(
     ax_top.grid(True, alpha=0.20, linewidth=0.5)
 
     # State bands drawn as thin horizontal strips within the top axes (axes fraction).
-    # rep_a: upper strip; rep_c1: lower strip — separated so neither overlaps price line.
+    # rep_a: upper strip; rep_c1: lower strip; separated so neither overlaps price line.
     _draw_state_band_no_legend(
         ax=ax_top,
         idx=common_idx,

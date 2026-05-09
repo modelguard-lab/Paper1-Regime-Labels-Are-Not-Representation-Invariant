@@ -400,7 +400,7 @@ def plot_ari_gap_distribution_from_key_results(
         zorder=1,
     )
 
-    # Mean line (primary emphasis) — use solid to avoid "chunky" dashed artifacts
+    # Mean line (primary emphasis); use solid to avoid "chunky" dashed artifacts
     ax.axvline(
         mean_gap,
         linestyle="-",

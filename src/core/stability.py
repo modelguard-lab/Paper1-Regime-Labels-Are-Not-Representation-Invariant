@@ -248,11 +248,11 @@ def _matched_wasserstein_cost(
 
     Returns:
         (cost, n_matched_finite, k):
-            cost — average matched cost including any penalty cells
-            n_matched_finite — number of Hungarian-matched pairs whose cost was
+            cost: average matched cost including any penalty cells
+            n_matched_finite: number of Hungarian-matched pairs whose cost was
                 computable (i.e. NOT penalty-filled); callers should filter or
                 flag records where n_matched_finite < k
-            k — min(len(samples_a), len(samples_b))
+            k: min(len(samples_a), len(samples_b))
     """
     k = int(min(len(samples_a), len(samples_b)))
     if k <= 0:
