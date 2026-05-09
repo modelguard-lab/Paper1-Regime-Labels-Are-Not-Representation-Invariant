@@ -11,14 +11,11 @@ genuine instability in the inference pipeline.
 from __future__ import annotations
 
 import logging
-import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from sklearn.metrics import adjusted_rand_score
-
-sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from src.core.features import RepConfig, build_representation_single
 from src.core.models import fit_hmm, fit_gmm
