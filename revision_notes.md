@@ -1,4 +1,4 @@
-# Revision Notes — 2026-04-17
+# Revision Notes (2026-04-17)
 
 Addressed 7 substantive critiques + 11 minor items + 6 self-identified weaknesses.
 
@@ -6,12 +6,12 @@ Addressed 7 substantive critiques + 11 minor items + 6 self-identified weaknesse
 
 ---
 
-## Critique 1 — Admissible class too narrow; redundancy unacknowledged
+## Critique 1: Admissible class too narrow; redundancy unacknowledged
 
 **Reviewer:** The six representations are highly redundant (5/6 share VaR/CVaR, 4/6 share the same windows). This should be acknowledged as strengthening the lower-bound argument. A genuinely heterogeneous representation (e.g. GARCH conditional volatility) should be added.
 
 **Response:**
-- Added `rep_d` (GARCH(1,1) conditional volatility + drawdown + VaR/CVaR) — a parametric autoregressive filter that is structurally different from rolling realized volatility.
+- Added `rep_d` (GARCH(1,1) conditional volatility + drawdown + VaR/CVaR), a parametric autoregressive filter that is structurally different from rolling realized volatility.
 - Rewrote §2.2 to explicitly enumerate the four independent variation axes and acknowledge the redundancy structure, reframing low ARI among near-redundant specifications as a conservative lower bound.
 - `arch>=5.0` added to dependencies.
 
@@ -19,14 +19,14 @@ Addressed 7 substantive critiques + 11 minor items + 6 self-identified weaknesse
 
 ---
 
-## Critique 2 — Seed stability vs main table precision illusion
+## Critique 2: Seed stability vs main table precision illusion
 
 **Reviewer:** Table 2 reports 3-decimal precision from 2 seeds, creating a false sense of accuracy. The 20-seed robustness results (Table 4) should be the main table.
 
 **Response:**
 - Promoted baseline seeds from [1,2] to [1..20] in the config.
 - Table 2 rewritten: 2-column format (Cross-rep ARI, Temporal ARI) with mean ± 95% CI from 20 seeds. AMI moved to table notes.
-- §4.3 renamed from "Robustness" to "State-number sensitivity" — its K-sweep role is now primary, not the seed-robustness check.
+- §4.3 renamed from "Robustness" to "State-number sensitivity"; its K-sweep role is now primary, not the seed-robustness check.
 - Added seed-level CI computation (`cross_rep_ari_seed_mean/ci95`, `temporal_ari_seed_mean/ci95`) to key_results.csv export.
 - `paper_autofill.py` updated for the new table format and auto-sync.
 
@@ -34,7 +34,7 @@ Addressed 7 substantive critiques + 11 minor items + 6 self-identified weaknesse
 
 ---
 
-## Critique 3 — Permutation test pooling ignores dependence
+## Critique 3: Permutation test pooling ignores dependence
 
 **Reviewer:** Pooling exceedance counts across non-independent pairs understates p-values. Report per-pair p-values; add dependence caveat; compress the section (the test merely confirms ARI > 0, which is a low bar).
 
@@ -47,7 +47,7 @@ Addressed 7 substantive critiques + 11 minor items + 6 self-identified weaknesse
 
 ---
 
-## Critique 4 — Disjoint temporal metric semantics unclear
+## Critique 4: Disjoint temporal metric semantics unclear
 
 **Reviewer:** The disjoint metric at step=252 compares labels from independently estimated models separated by one year. Low ARI there could reflect estimation instability rather than low regime persistence. A traditional overlap-based metric should be reported as a comparator.
 
@@ -60,9 +60,9 @@ Addressed 7 substantive critiques + 11 minor items + 6 self-identified weaknesse
 
 ---
 
-## Critique 5 — Figure 1 legend mismatch; limited quantification
+## Critique 5: Figure 1 legend mismatch; limited quantification
 
-**Reviewer:** "Layer A (returns)" / "Layer B (risk)" is misleading — both are risk-based representations. A single qualitative figure for COVID is insufficient; add a quantitative time series.
+**Reviewer:** "Layer A (returns)" / "Layer B (risk)" is misleading; both are risk-based representations. A single qualitative figure for COVID is insufficient; add a quantitative time series.
 
 **Response:**
 - Fixed legend labels: "Layer A (returns)" → "rep_a", "Layer B (risk)" → "rep_c1" in both figure variants. Rewrote Figure 1 caption.
@@ -73,7 +73,7 @@ Addressed 7 substantive critiques + 11 minor items + 6 self-identified weaknesse
 
 ---
 
-## Critique 6 — Ordering consistency needs chance baseline
+## Critique 6: Ordering consistency needs chance baseline
 
 **Reviewer:** Top-1 agreement of 0.91–0.94 and Spearman of 0.886–0.907 appear high, but the Hungarian-matched chance baseline at K=3 may be much higher than 1/K. Compute the null distribution; with only 3 ranks, Spearman has limited discriminative power.
 
@@ -87,13 +87,13 @@ Addressed 7 substantive critiques + 11 minor items + 6 self-identified weaknesse
 
 ---
 
-## Critique 7 — D'Amour positioning; instability vs plurality
+## Critique 7: D'Amour positioning; instability vs plurality
 
 **Reviewer:** The paper correctly notes regime identification lacks held-out performance (unlike D'Amour et al.'s underspecification), but doesn't explore the deeper question: does low ARI mean "instability" (a defect) or "multiple equally valid partitions" (epistemic pluralism)? This is the most theoretically interesting tension.
 
 **Response:**
 - Introduction: expanded the underspecification paragraph to name the two interpretations explicitly and note their different governance implications (repair vs ensemble reporting).
-- Added new §4.4 "Instability or plurality?" — a dedicated discussion subsection that:
+- Added new §4.4 "Instability or plurality?", a dedicated discussion subsection that:
   - Restates D'Amour et al.'s framework and why it doesn't apply
   - Defines the two readings precisely
   - Acknowledges the paper cannot distinguish them (requires ground truth or downstream payoffs)
@@ -119,11 +119,11 @@ Addressed 7 substantive critiques + 11 minor items + 6 self-identified weaknesse
 
 ---
 
-## Self-identified weaknesses — additional fixes (same session)
+## Self-identified weaknesses: additional fixes (same session)
 
-### Weakness #1 + #3 — Downstream economic impact / pure negative finding
+### Weakness #1 + #3: Downstream economic impact / pure negative finding
 
-**Problem:** Paper proved labels disagree but never answered "so what?" — no downstream consequence quantified. After ordering null correction, paper became purely negative with no constructive anchor.
+**Problem:** Paper proved labels disagree but never answered "so what?"; no downstream consequence quantified. After ordering null correction, paper became purely negative with no constructive anchor.
 
 **Response:**
 - Added `src/posthoc_var_spread.py`: computes regime-conditional CVaR (5% expected shortfall) under each representation for each date; measures cross-representation spread.
@@ -131,26 +131,26 @@ Addressed 7 substantive critiques + 11 minor items + 6 self-identified weaknesse
 - Added "Downstream economic impact" paragraph to §4.1 with these numbers.
 - Paper is no longer purely negative: "labels disagree *and* this changes risk estimates by 53–80%."
 
-### Weakness #4 — §4.4 lacks empirical support for instability-vs-plurality
+### Weakness #4: §4.4 lacks empirical support for instability-vs-plurality
 
 **Problem:** The instability-vs-plurality distinction was conceptual only; a synthetic experiment could distinguish the two readings.
 
 **Response:**
 - Added `src/posthoc_synthetic_groundtruth.py`: generates data from known 3-state regime-switching DGP (Markov chain, persistence=0.97, 3 vol levels, drift), runs the full representation pipeline, compares inferred labels to ground truth.
-- **Key finding:** ARI vs ground truth averages 0.264 (HMM) / 0.273 (GMM) — comparable to cross-rep ARI (0.305 / 0.383). This is **instability, not plurality**: the pipeline fails to recover the true partition even when one exists.
+- **Key finding:** ARI vs ground truth averages 0.264 (HMM) / 0.273 (GMM), comparable to cross-rep ARI (0.305 / 0.383). This is **instability, not plurality**: the pipeline fails to recover the true partition even when one exists.
 - Updated §4.4 with the synthetic evidence; the discussion now provides "partial resolution" rather than purely conceptual framing.
 
-### Weakness #2 + #6 — N=4 and class homogeneity
+### Weakness #2 + #6: N=4 and class homogeneity
 
 **Problem:** N=4 assets limits statistical inference; admissible class remains homogeneous (daily, single-asset, 252-day window).
 
-**Response:** Expanded conclusion limitations paragraph to explicitly state: (1) four assets are case studies, not a statistical sample — no formal cross-asset inference supported; (2) representation class restricted to daily-frequency, single-asset, univariate features with fixed estimation window.
+**Response:** Expanded conclusion limitations paragraph to explicitly state: (1) four assets are case studies, not a statistical sample (no formal cross-asset inference supported); (2) representation class restricted to daily-frequency, single-asset, univariate features with fixed estimation window.
 
-### Weakness #5 — Some representations might be better
+### Weakness #5: Some representations might be better
 
 **Problem:** Paper treats all representations as equally valid, but a domain expert might privilege one.
 
-**Response:** Partially addressed by the synthetic experiment: the experiment framework can rank representations by ARI vs ground truth. In the synthetic setting, no representation is clearly superior (all have ARI ≈ 0.26–0.27), but the framework is extensible. Not further pursued for real data (would require external ground truth like NBER dates — out of scope for this paper).
+**Response:** Partially addressed by the synthetic experiment: the experiment framework can rank representations by ARI vs ground truth. In the synthetic setting, no representation is clearly superior (all have ARI ≈ 0.26–0.27), but the framework is extensible. Not further pursued for real data (would require external ground truth like NBER dates, out of scope for this paper).
 
 ---
 
@@ -166,13 +166,13 @@ Addressed 7 substantive critiques + 11 minor items + 6 self-identified weaknesse
 | `src/posthoc_ami_vi_perm.py` | per-pair p-values, rep_d in REPS, overlap ARI in summary |
 | `src/posthoc_figs.py` | disagreement time-series plot wiring |
 | `src/plots.py` | `plot_disagreement_timeseries()`, fixed legend labels |
-| `src/posthoc_var_spread.py` | **NEW** — regime-conditional CVaR spread analysis |
-| `src/posthoc_synthetic_groundtruth.py` | **NEW** — synthetic ground-truth experiment |
+| `src/posthoc_var_spread.py` | **NEW**: regime-conditional CVaR spread analysis |
+| `src/posthoc_synthetic_groundtruth.py` | **NEW**: synthetic ground-truth experiment |
 | `paper/main.tex` | all text changes above |
 
 ---
 
-## Second revision round — 2026-04-19
+## Second revision round (2026-04-19)
 
 After the initial revision above, the full pipeline was re-run with the new config (20 seeds × 7 reps including GARCH); a further round of reviewer audits surfaced additional inconsistencies that were fixed after inspecting the actual outputs.
 
@@ -194,14 +194,14 @@ All tables previously used placeholder values (Table 4 K=3 row from the old 6-re
 
 All three ARI tables (baseline, step-sweep, K-sweep) now reference the same `20 seeds × 7 representations` run and carry a `7 representations including rep_d (GARCH-vol)` note.
 
-**GMM/HMM ranking correction.** The original text said "GMM exhibits higher stability than HMM in both dimensions" — but with the new numbers GMM cross (0.415) > HMM cross (0.355) while GMM temp (0.396) < HMM temp (0.425). Rewritten to describe the actual split.
+**GMM/HMM ranking correction.** The original text said "GMM exhibits higher stability than HMM in both dimensions", but with the new numbers GMM cross (0.415) > HMM cross (0.355) while GMM temp (0.396) < HMM temp (0.425). Rewritten to describe the actual split.
 
 ## 2b. Per-pair permutation test redesign
 
-Initial implementation used B=999 permutations × all 148,680 pairs per asset — computationally infeasible (>1h single-threaded per asset). Redesigned:
+Initial implementation used B=999 permutations × all 148,680 pairs per asset, computationally infeasible (>1h single-threaded per asset). Redesigned:
 
 - **Parallelised** `aggregate_permutation_pvalue` via `joblib Parallel(backend="loky")`, per-pair as independent task.
-- **Subsampled** to 2,000 pairs per asset (plenty of power for the claim — ARI ≫ 0).
+- **Subsampled** to 2,000 pairs per asset (plenty of power for the claim, since ARI ≫ 0).
 - **Reduced** B=999 → **B=99** (minimum detectable p = 1/100 = 0.01; sufficient for "p<0.05" claim).
 
 **Claim correction**: initially claimed "all individual pairs p<0.05". Actual data shows max p = 1.0 across all assets. The claim is now "97.9–98.5% of pairs reject at p<0.05; failing 1.5–2.1% correspond to specific (model, seed, roll) slices where the observed ARI is near zero by chance (range [-0.13, 0.05])." Added new Supplementary Table `tab:perm_per_asset` with the per-asset distribution.

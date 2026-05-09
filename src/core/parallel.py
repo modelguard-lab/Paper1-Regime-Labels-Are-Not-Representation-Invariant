@@ -92,23 +92,4 @@ def _parallel_or_sequential(func, args_list, n_jobs, label="parallel"):
         results = [func(*a) for a in args_list]
         logger.info("%s: done in %.1fs (sequential fallback, %d tasks)", label, _t.perf_counter() - t0, n_tasks)
         return results
-from scipy.stats import wasserstein_distance
-from tqdm import tqdm
-
-from src.core.data import download_tickers, load_prices
-from src.core.features import RepConfig, build_representation_single
-from src.core.metrics import semantic_drift, stability_metrics, temporal_disjoint_metrics
-from src.core.models import fit_gmm, fit_hmm
-from src.visualization.plots import (
-    plot_ari_vs_step,
-    plot_cross_rep_box_by_rep,
-    plot_line_by_group,
-    plot_ordering_consistency_summary,
-    plot_pairwise_matrix_heatmap,
-)
-from src.core.utils import ensure_dir, rolling_slices, safe_name, save_json
-from src.workflows.paper_autofill import update_empirical_results_md, update_main_tex_tables
-from src.experiments.synthetic_sanity import run_synthetic_sanity_check
-
-logger = logging.getLogger(__name__)
 

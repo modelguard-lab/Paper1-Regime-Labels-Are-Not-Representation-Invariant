@@ -60,7 +60,7 @@ class TestMatchedWassersteinCost:
         assert math.isfinite(cost)
         # Penalty is 10 * max_finite + 1 = 31; matched = (0, 31); mean = 15.5.
         assert cost == pytest.approx(15.5, rel=1e-12)
-        # Only 1 of k=2 matched pairs came from a finite cost cell —
+        # Only 1 of k=2 matched pairs came from a finite cost cell;
         # the other was penalty-filled. Downstream callers can use this
         # to filter or flag partially-defined comparisons.
         assert (n_finite, k) == (1, 2)

@@ -203,7 +203,7 @@ def run_synthetic_sanity_check(cfg: Dict, outputs_dir: Path) -> None:
     """
     Run a one-page synthetic sanity check and write artifacts under outputs/synthetic_sanity/.
     """
-    from src.workflows.pipeline import _run_single_asset  # local import to avoid circular import at module load
+    from src.workflows.single_asset import _run_single_asset
 
     synth_cfg = cfg.get("synthetic_sanity") or {}
     if not bool(synth_cfg.get("enabled", False)):

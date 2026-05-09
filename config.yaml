@@ -137,16 +137,16 @@ grid:
   # Proven-stable config: sequential outer + full inner loky.
   #
   # History:
-  #   - threading backend: 1.8% CPU (GIL-bound on hmmlearn EM) — FAILED
-  #   - sequential outer + 24 inner loky: 69% CPU, ~8 min/asset — STABLE
-  #   - 4 outer × 6 inner via ProcessPoolExecutor: 100% CPU but BSOD'd Windows
-  #   - 2 outer × 8 inner via ProcessPoolExecutor: step=21 analysis triggered
+  #   - threading backend: 1.8% CPU (GIL-bound on hmmlearn EM): FAILED
+  #   - sequential outer + 24 inner loky: 69% CPU, ~8 min/asset: STABLE
+  #   - 4 outer x 6 inner via ProcessPoolExecutor: 100% CPU but BSOD'd Windows
+  #   - 2 outer x 8 inner via ProcessPoolExecutor: step=21 analysis triggered
   #     BrokenProcessPool (nested-spawn + heavy shards exceeds Windows's tolerance)
   n_jobs: 24
-  # Outer asset parallelism disabled — nested ProcessPoolExecutor+loky on Windows
+  # Outer asset parallelism disabled: nested ProcessPoolExecutor+loky on Windows
   # fails reliably in the analysis phase for step=21 (large shards).
   n_asset_workers: 1
-  # Fit-task backend: loky (process-based) — required for true parallelism on EM.
+  # Fit-task backend: loky (process-based), required for true parallelism on EM.
   # Analysis tasks (ARI/Spearman, numpy-heavy) use threading internally (see
   # `_parallel_or_sequential` in runner.py) to avoid loky/MKL crashes on Windows.
   parallel_backend: "loky"

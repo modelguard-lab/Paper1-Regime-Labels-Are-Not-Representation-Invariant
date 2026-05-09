@@ -30,6 +30,8 @@ ALL_EXPERIMENT_COMMANDS: tuple[str, ...] = (
     "posthoc_figs",
     "posthoc_ami",
     "posthoc_synthetic",
+    "posthoc_synthetic_psweep",
+    "posthoc_synthetic_ksweep",
     "posthoc_var_spread",
     "posthoc_rank_aligned_ordering",
     "posthoc_convergence_audit",
