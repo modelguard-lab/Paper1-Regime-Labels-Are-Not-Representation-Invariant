@@ -106,7 +106,7 @@ def _compute_garch_vol(returns: pd.Series) -> pd.Series:
         return (_compute_volatility(returns, 20)).rename("garch_vol")
 
 
-def _compute_vix_level(vix: pd.Series, std_window: int = 120) -> pd.Series:
+def _compute_vix_level(vix: pd.Series) -> pd.Series:
     """Raw VIX level, renamed for rep_e consumption.
 
     Previously this function applied a 120-day rolling z-score internally,
@@ -116,11 +116,7 @@ def _compute_vix_level(vix: pd.Series, std_window: int = 120) -> pd.Series:
     numerics are not materially corrupted, but the transformation was
     misleading. We now return the raw level and let the rep-level standardizer
     handle the single z-score pass uniformly with vix_change and vix_percentile.
-
-    `std_window` is kept in the signature for config-compatibility but is
-    unused; callers can omit it going forward.
     """
-    del std_window  # kept for backward compatibility with existing configs
     return vix.rename("vix_level")
 
 
@@ -191,7 +187,6 @@ def build_representation_single(
     tail_alpha = float(windows.get("tail_alpha", 0.05))
     skew_window = int(windows.get("skew_window", 60))
     stability_window = int(windows.get("stability_window", 60))
-    vix_std_window = int(windows.get("vix_std_window", 120))
     vix_change_window = int(windows.get("vix_change_window", 5))
     vix_pct_window = int(windows.get("vix_pct_window", 60))
 
@@ -219,7 +214,7 @@ def build_representation_single(
             )
         vix = aux["^VIX"].reindex(price.index).ffill()
         if "vix_level" in rep.features:
-            feat_list.append(_compute_vix_level(vix, vix_std_window))
+            feat_list.append(_compute_vix_level(vix))
         if "vix_change" in rep.features:
             feat_list.append(_compute_vix_change(vix, vix_change_window))
         if "vix_percentile" in rep.features:

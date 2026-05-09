@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Dict, List, Tuple
 
@@ -519,8 +520,14 @@ def _write_key_outputs(
             ablation = float(r["value"])
             break
 
+    # Derive a paper identifier from the repo directory name
+    # (e.g. "Paper1-Regime-..." -> "Paper 1"); fall back to "Paper" if the
+    # ancestor path does not match the canonical PaperN-* shape.
+    repo_name = out_base.resolve().parent.name
+    m = re.match(r"Paper(\d+[a-z]?)", repo_name)
+    paper_label = f"Paper {m.group(1)}" if m else "Paper"
     lines = [
-        "# Paper 1: Unified Run Analysis",
+        f"# {paper_label}: Unified Run Analysis",
         "",
         f"- **scores_summary rows**: {len(scores)}",
         f"- **stability_summary rows**: {len(stability)}",

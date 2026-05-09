@@ -58,7 +58,7 @@ def _fit_one(
             X,
             n_states=k,
             covariance_type=str(mc.get("covariance_type", "full")),
-            n_init=int(mc.get("n_init", 5)),
+            n_init=int(mc.get("n_init", 1)),
             random_state=seed,
         )
     return res.states_hard, res.states_soft, res.model_params, res.scores

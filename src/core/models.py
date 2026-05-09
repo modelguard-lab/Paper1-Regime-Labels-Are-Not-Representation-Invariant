@@ -154,7 +154,7 @@ def fit_gmm(
     X: pd.DataFrame,
     n_states: int,
     covariance_type: str = "full",
-    n_init: int = 5,
+    n_init: int = 1,
     random_state: int | None = 0,
 ) -> ModelResult:
     X_clean, valid_index = _drop_na_rows(X)

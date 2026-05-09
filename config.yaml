@@ -158,9 +158,6 @@ synthetic_sanity:
   T: 2200
   K: 3
   persistence_p: 0.97
-  # Robustness sweep over persistence values and K; confirms finding is not DGP-specific.
-  persistence_sweep: [0.80, 0.90, 0.97]
-  k_sweep: [2, 3, 4]
   drift_alpha: 0.6
   data_seed: 123
   # Rolling protocol
