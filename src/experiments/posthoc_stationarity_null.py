@@ -255,8 +255,18 @@ def run_stationarity_null(
     assets: List[str] | None = None,
     n_sim: int = N_SIM,
     k: int = K,
+    delta: float = 0.65,
 ) -> pd.DataFrame:
-    """Run the stationarity null and return summary DataFrame."""
+    """Run the stationarity null and return summary DataFrame.
+
+    Parameters
+    ----------
+    delta : float
+        Steinley (2008) ARI stability threshold. The summary column
+        ``null_frac_below_065`` reports the fraction of simulated null paths
+        whose cross-rep ARI falls below this cutoff. The default 0.65 matches
+        the "high agreement" threshold used elsewhere in the paper.
+    """
     if assets is None:
         assets = ASSETS
 
@@ -337,7 +347,7 @@ def run_stationarity_null(
             null_mean = float(np.nanmean(arr))
             null_p5 = float(np.nanpercentile(arr, 5))
             null_p95 = float(np.nanpercentile(arr, 95))
-            null_frac_below = float(np.mean(arr < 0.65))
+            null_frac_below = float(np.mean(arr < delta))
 
             rows.append({
                 "asset": asset,
@@ -351,21 +361,38 @@ def run_stationarity_null(
                 "n_sim": len(arr),
             })
             logger.info(
-                "  %s %s: null_mean=%.3f [%.3f, %.3f]  frac<0.65=%.2f  obs=%.3f",
-                asset, dgp_name, null_mean, null_p5, null_p95, null_frac_below,
+                "  %s %s: null_mean=%.3f [%.3f, %.3f]  frac<%.2f=%.2f  obs=%.3f",
+                asset, dgp_name, null_mean, null_p5, null_p95, delta, null_frac_below,
                 obs_ari if obs_ari is not None else float("nan"),
             )
 
     return pd.DataFrame(rows)
 
 
-def main() -> None:
+def main(cfg: Optional[Dict] = None) -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     project = Path(__file__).resolve().parent.parent
     outputs = project / "outputs"
     raw = project / "data"
 
-    df = run_stationarity_null(outputs, raw)
+    if cfg is None:
+        cfg_path = project / "config.yaml"
+        if cfg_path.exists():
+            try:
+                import yaml
+
+                cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+            except Exception:
+                cfg = None
+    delta = 0.65
+    if isinstance(cfg, dict):
+        stab = cfg.get("stability", {}) or {}
+        try:
+            delta = float(stab.get("delta", 0.65))
+        except (TypeError, ValueError):
+            delta = 0.65
+
+    df = run_stationarity_null(outputs, raw, delta=delta)
     if df.empty:
         print("No null results computed.")
         return
@@ -376,7 +403,7 @@ def main() -> None:
     print(df.to_string(index=False, float_format="%.3f"))
     print()
     print("Interpretation:")
-    print("  null_frac_below_065 = fraction of simulated paths where cross-rep ARI < 0.65")
+    print(f"  null_frac_below_065 = fraction of simulated paths where cross-rep ARI < {delta}")
     print("  If null_mean >> obs_mean_ari → real data has significantly lower agreement")
     print("  than a stationary null, strengthening the main finding.")
     print("  If null_mean ≈ obs_mean_ari → representation sensitivity may be inherent")

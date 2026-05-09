@@ -4,6 +4,12 @@ data:
   start_date: "2005-01-01"
   end_date: "2026-02-28"
 
+stability:
+  # Steinley (2008) ARI stability threshold used by posthoc_stationarity_null
+  # to compute the fraction of simulated null paths whose cross-rep ARI
+  # falls below the "high agreement" cutoff.
+  delta: 0.65
+
 assets: ["IEF", "^GSPC", "GLD", "BTC-USD"]
 
 representations:
