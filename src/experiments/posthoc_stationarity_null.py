@@ -371,7 +371,7 @@ def run_stationarity_null(
 
 def main(cfg: Optional[Dict] = None) -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
-    project = Path(__file__).resolve().parent.parent
+    project = Path(__file__).resolve().parent.parent.parent
     outputs = project / "outputs"
     raw = project / "data"
 

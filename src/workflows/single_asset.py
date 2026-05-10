@@ -51,6 +51,7 @@ from src.core.utils import (
     safe_name,
     save_json,
 )
+from src.visualization.plots import plot_ordering_consistency_summary
 from src.workflows.outputs import _write_key_outputs, _write_plots
 
 logger = logging.getLogger(__name__)

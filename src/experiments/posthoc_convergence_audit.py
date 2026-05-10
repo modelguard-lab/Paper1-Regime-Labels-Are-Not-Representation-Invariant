@@ -24,7 +24,7 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent.parent
 DELTA_RE = re.compile(r"Delta is (-?[0-9.eE+-]+)")
 THRESHOLDS = [1e-8, 1e-6, 1e-4, 1e-3, 1e-2, 1e-1, 1.0]
 
@@ -63,13 +63,14 @@ def count_total_hmm_fits(outputs_dir: Path) -> int:
     return total
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--log", type=Path, default=ROOT / "outputs" / "run.log")
     parser.add_argument("--outputs-dir", type=Path, default=ROOT / "outputs")
     parser.add_argument("--out", type=Path, default=ROOT / "outputs" / "hmm_convergence_audit.csv")
-    args = parser.parse_args()
+    # When dispatched via run.py (cli_registry), sys.argv carries the command name; ignore it.
+    args = parser.parse_args([] if argv is None else argv)
 
     if not args.log.exists():
         logger.error("run.log not found: %s", args.log)

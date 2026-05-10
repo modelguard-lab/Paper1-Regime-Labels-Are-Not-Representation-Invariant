@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import time
 from pathlib import Path
 from typing import Dict, List
@@ -141,6 +142,8 @@ def _run_step_sweep(cfg: Dict, assets: List[str], outputs_dir: Path, steps: List
             for asset in assets:
                 elapsed = _run_one_asset(asset, step)
                 totals_by_asset[safe_name(asset)] = totals_by_asset.get(safe_name(asset), 0.0) + float(elapsed)
+        # Lazy import to avoid circular dependency with src.workflows.pipeline.
+        from src.workflows.pipeline import _extract_metrics_from_key_results
         for asset in assets:
             p = outputs_dir / safe_name(asset) / f"step_{int(step)}" / "key_results.csv"
             m = _extract_metrics_from_key_results(p)

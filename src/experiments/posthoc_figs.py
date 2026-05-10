@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 def main(cfg: Optional[Dict] = None) -> None:
-    project_dir = Path(__file__).resolve().parent.parent
+    project_dir = Path(__file__).resolve().parent.parent.parent
     outputs_dir = project_dir / "outputs"
     raw_dir = project_dir / "data"
 
@@ -262,7 +262,7 @@ def main(cfg: Optional[Dict] = None) -> None:
 def _run_repr_decomp(outputs_dir: Path) -> None:
     """Run representation-dimension and variance decomposition."""
     try:
-        from posthoc_repr_decomp import run_decomposition
+        from src.experiments.posthoc_repr_decomp import run_decomposition
         decomp_df, var_df = run_decomposition(outputs_dir)
         if not decomp_df.empty:
             decomp_df.to_csv(outputs_dir / "repr_decomp_summary.csv", index=False)
@@ -276,6 +276,6 @@ def _run_repr_decomp(outputs_dir: Path) -> None:
 
 if __name__ == "__main__":
     main()
-    outputs_dir = Path(__file__).resolve().parent.parent / "outputs"
+    outputs_dir = Path(__file__).resolve().parent.parent.parent / "outputs"
     _run_repr_decomp(outputs_dir)
 

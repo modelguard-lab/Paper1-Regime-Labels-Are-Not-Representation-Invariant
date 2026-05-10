@@ -168,7 +168,7 @@ def main() -> None:
         print("No results.")
         return
 
-    out = Path(__file__).resolve().parent.parent / "outputs" / "synthetic_groundtruth.csv"
+    out = Path(__file__).resolve().parent.parent.parent / "outputs" / "synthetic_groundtruth.csv"
     out.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(out, index=False)
     print(f"Saved to {out}")

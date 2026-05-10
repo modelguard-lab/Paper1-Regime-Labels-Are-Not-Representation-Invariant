@@ -42,7 +42,7 @@ from src.core.utils import assets_from_cfg, enabled_models_from_cfg, reps_from_c
 
 logger = logging.getLogger(__name__)
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent.parent
 OUTPUTS_DIR = ROOT / "outputs"
 ALPHA_DEFAULT = 0.05
 N_PERM_DEFAULT = 500
@@ -223,7 +223,7 @@ def compute_for_asset_k(
 
 def main(cfg: Optional[Dict] = None) -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
-    project = Path(__file__).resolve().parent.parent
+    project = Path(__file__).resolve().parent.parent.parent
     if cfg is None:
         cfg_path = project / "config.yaml"
         if cfg_path.exists():

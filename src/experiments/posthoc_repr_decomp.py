@@ -218,7 +218,7 @@ def _dim_label(dim: str) -> str:
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
-    outputs_dir = Path(__file__).resolve().parent.parent / "outputs"
+    outputs_dir = Path(__file__).resolve().parent.parent.parent / "outputs"
     if not outputs_dir.exists():
         print(f"outputs_dir not found: {outputs_dir}")
         return

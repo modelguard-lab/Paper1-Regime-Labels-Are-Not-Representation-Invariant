@@ -22,6 +22,7 @@ import csv
 import json
 import logging
 import os
+import threading
 import time
 from pathlib import Path
 from typing import Dict, List, Tuple
@@ -29,7 +30,10 @@ from typing import Dict, List, Tuple
 import numpy as np
 import pandas as pd
 from joblib import Parallel, delayed
-from joblib.externals.loky.process_executor import TerminatedWorkerError
+from joblib.externals.loky.process_executor import (
+    BrokenProcessPool,
+    TerminatedWorkerError,
+)
 
 from src.core.features import RepConfig, build_representation_single
 from src.core.metrics import semantic_drift
@@ -199,6 +203,11 @@ def _fit_slice_write_shard(
         pass
 
     pid = os.getpid()
+    # Threading-fallback safety: under backend="threading" multiple threads share
+    # the same pid and would race on a shared shard path, producing duplicate
+    # header rows that later poison the merged CSV. Suffix with thread id so
+    # each thread writes its own shard.
+    tid = threading.get_ident()
     window_X = _build_window(X_values, X_index_values, X_columns, start, end)
 
     try:
@@ -209,7 +218,7 @@ def _fit_slice_write_shard(
         m = str(model_name)
 
         # States (hard) shard
-        hard_path = Path(shard_dir) / f"states_hard_{m}_{pid}.csv"
+        hard_path = Path(shard_dir) / f"states_hard_{m}_{pid}_{tid}.csv"
         hard_df = hard.rename("state").to_frame().reset_index()
         hard_df = hard_df.rename(columns={hard_df.columns[0]: "date"})
         hard_df.insert(0, "model", model_name)
@@ -222,7 +231,7 @@ def _fit_slice_write_shard(
         hard_df.to_csv(hard_path, index=False, mode="a", header=not hard_path.exists())
 
         # States (soft) shard
-        soft_path = Path(shard_dir) / f"states_soft_{m}_{pid}.csv"
+        soft_path = Path(shard_dir) / f"states_soft_{m}_{pid}_{tid}.csv"
         soft_df = soft.reset_index()
         soft_df = soft_df.rename(columns={soft_df.columns[0]: "date"})
         soft_df.insert(0, "model", model_name)
@@ -234,7 +243,7 @@ def _fit_slice_write_shard(
         soft_df.to_csv(soft_path, index=False, mode="a", header=not soft_path.exists())
 
         # Scores shard (one row per window; fixed schema)
-        score_path = Path(shard_dir) / f"scores_{m}_{pid}.csv"
+        score_path = Path(shard_dir) / f"scores_{m}_{pid}_{tid}.csv"
         score_header = [
             "rep",
             "model",
@@ -267,7 +276,7 @@ def _fit_slice_write_shard(
 
         # Drift shard
         if drift is not None and not drift.empty:
-            drift_path = Path(shard_dir) / f"semantic_drift_{m}_{pid}.csv"
+            drift_path = Path(shard_dir) / f"semantic_drift_{m}_{pid}_{tid}.csv"
             ddf = drift.rename("semantic_drift").to_frame().reset_index()
             ddf = ddf.rename(columns={ddf.columns[0]: "state"})
             ddf.insert(0, "model", model_name)
@@ -278,7 +287,7 @@ def _fit_slice_write_shard(
             ddf.to_csv(drift_path, index=False, mode="a", header=not drift_path.exists())
 
         # Params shard (jsonl)
-        params_path = Path(shard_dir) / f"model_params_{m}_{pid}.jsonl"
+        params_path = Path(shard_dir) / f"model_params_{m}_{pid}_{tid}.jsonl"
         params_path.parent.mkdir(parents=True, exist_ok=True)
         with open(params_path, "a", encoding="utf-8") as f:
             f.write(
@@ -406,12 +415,12 @@ def _run_parallel_sharded_fits(
             for (model_name, seed, s, e, roll) in tasks
         )
     except Exception as e:
-        is_terminated = TerminatedWorkerError is not None and isinstance(
-            e, TerminatedWorkerError
-        )
-        if not is_terminated:
+        is_pool_broken = isinstance(
+            e, (TerminatedWorkerError, BrokenProcessPool)
+        ) if TerminatedWorkerError is not None else False
+        if not is_pool_broken:
             logger.exception(
-                "Parallel fit failed (non-terminated); asset=%s backend=%s n_jobs=%d tasks=%d rep=%s K=%d W=%d",
+                "Parallel fit failed (non-pool-broken); asset=%s backend=%s n_jobs=%d tasks=%d rep=%s K=%d W=%d",
                 asset,
                 backend,
                 int(n_jobs),
@@ -423,8 +432,9 @@ def _run_parallel_sharded_fits(
             raise
 
         logger.exception(
-            "TerminatedWorkerError during parallel fits; retrying with safer settings. "
+            "Pool-broken error (%s) during parallel fits; retrying with safer settings. "
             "asset=%s backend=%s n_jobs=%d tasks=%d rep=%s K=%d W=%d",
+            type(e).__name__,
             asset,
             backend,
             int(n_jobs),
