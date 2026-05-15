@@ -263,13 +263,16 @@ def main(cfg: Optional[Dict] = None) -> None:
 def _run_repr_decomp(outputs_dir: Path) -> None:
     """Run representation-dimension and variance decomposition."""
     try:
-        decomp_df, var_df = run_decomposition(outputs_dir)
+        decomp_df, var_df, per_pair_df = run_decomposition(outputs_dir)
         if not decomp_df.empty:
             decomp_df.to_csv(outputs_dir / "repr_decomp_summary.csv", index=False)
             logger.info("repr_decomp_summary.csv written (%d rows)", len(decomp_df))
         if not var_df.empty:
             var_df.to_csv(outputs_dir / "repr_variance_decomp.csv", index=False)
             logger.info("repr_variance_decomp.csv written (%d rows)", len(var_df))
+        if not per_pair_df.empty:
+            per_pair_df.to_csv(outputs_dir / "repr_decomp_per_pair.csv", index=False)
+            logger.info("repr_decomp_per_pair.csv written (%d rows)", len(per_pair_df))
     except Exception:
         logger.exception("posthoc_figs: representation decomposition failed.")
 

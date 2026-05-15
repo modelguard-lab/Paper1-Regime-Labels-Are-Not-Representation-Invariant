@@ -84,7 +84,7 @@ def _classify_pair(a: str, b: str) -> str:
 # Main analysis
 # ---------------------------------------------------------------------------
 
-def run_decomposition(outputs_dir: Path) -> Tuple[pd.DataFrame, pd.DataFrame]:
+def run_decomposition(outputs_dir: Path) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Compute dimension decomposition and variance decomposition.
 
     Parameters
@@ -99,9 +99,14 @@ def run_decomposition(outputs_dir: Path) -> Tuple[pd.DataFrame, pd.DataFrame]:
     var_df : pd.DataFrame
         Variance decomposition per (asset, model):
         between-pair variance, within-pair seed variance, eta-squared.
+    per_pair_df : pd.DataFrame
+        Per-(asset, model, pair_key) mean ARI with dim_category label.
+        Columns: asset, model, pair_key, dim_category, ari.
+        Emitted to outputs/repr_decomp_per_pair.csv for Table S7 verification.
     """
     decomp_rows: List[Dict] = []
     var_rows: List[Dict] = []
+    per_pair_rows: List[Dict] = []
 
     # Support both flat layout (outputs/ASSET/plots/) and step-sweep layout
     # (outputs/ASSET/step_21/plots/).  Prefer step_21 (baseline) when present.
@@ -151,6 +156,17 @@ def run_decomposition(outputs_dir: Path) -> Tuple[pd.DataFrame, pd.DataFrame]:
         )
 
         for model, mdf in cross.groupby("model"):
+            # --- Per-pair mean ARI detail rows (emitted to repr_decomp_per_pair.csv) ---
+            for pair_key, pdf in mdf.groupby("pair_key"):
+                dim_cat = pdf["dimension"].iloc[0] if not pdf.empty else "dim_other"
+                per_pair_rows.append({
+                    "asset": asset,
+                    "model": str(model),
+                    "pair_key": str(pair_key),
+                    "dim_category": str(dim_cat),
+                    "ari": float(pdf["ari"].dropna().mean()),
+                })
+
             # --- Dimension decomposition ---
             for dim, ddf in mdf.groupby("dimension"):
                 vals = ddf["ari"].dropna().values
@@ -200,7 +216,8 @@ def run_decomposition(outputs_dir: Path) -> Tuple[pd.DataFrame, pd.DataFrame]:
 
     decomp_df = pd.DataFrame(decomp_rows)
     var_df = pd.DataFrame(var_rows)
-    return decomp_df, var_df
+    per_pair_df = pd.DataFrame(per_pair_rows)
+    return decomp_df, var_df, per_pair_df
 
 
 def _dim_label(dim: str) -> str:
@@ -223,7 +240,13 @@ def main() -> None:
         print(f"outputs_dir not found: {outputs_dir}")
         return
 
-    decomp_df, var_df = run_decomposition(outputs_dir)
+    decomp_df, var_df, per_pair_df = run_decomposition(outputs_dir)
+
+    if not per_pair_df.empty:
+        out_per_pair = outputs_dir / "repr_decomp_per_pair.csv"
+        per_pair_df.to_csv(out_per_pair, index=False)
+        print(f"Per-pair detail saved to {out_per_pair}")
+        print()
 
     if decomp_df.empty:
         print("No decomposition data found.")
