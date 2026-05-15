@@ -16,6 +16,7 @@ from src.visualization.plots import (
     plot_representation_failure_matrix,
 )
 from src.core.utils import reps_from_cfg
+from src.experiments.posthoc_repr_decomp import run_decomposition
 
 
 logger = logging.getLogger(__name__)
@@ -262,7 +263,6 @@ def main(cfg: Optional[Dict] = None) -> None:
 def _run_repr_decomp(outputs_dir: Path) -> None:
     """Run representation-dimension and variance decomposition."""
     try:
-        from src.experiments.posthoc_repr_decomp import run_decomposition
         decomp_df, var_df = run_decomposition(outputs_dir)
         if not decomp_df.empty:
             decomp_df.to_csv(outputs_dir / "repr_decomp_summary.csv", index=False)

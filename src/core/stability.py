@@ -121,7 +121,6 @@ def _compute_rep_stability_from_map(
     rolls: List[str],
     n_jobs: int = -1,
 ) -> List[Dict]:
-    from joblib import Parallel, delayed
     import time as _time
 
     tasks = [(m, s) for m in models for s in seeds]
@@ -190,7 +189,6 @@ def _compute_window_stability_from_map(
     rolls: List[str],
     n_jobs: int = -1,
 ) -> List[Dict]:
-    from joblib import Parallel, delayed
     import time as _time
 
     tasks = [(rep, m, s) for rep in rep_names for m in models for s in seeds]
@@ -321,7 +319,6 @@ def _compute_semantic_crossrep_wasserstein_from_map(
     rolls: List[str],
     n_jobs: int = -1,
 ) -> List[Dict]:
-    from joblib import Parallel, delayed
     import time as _time
 
     tasks = [(m, s) for m in models for s in seeds]
@@ -377,7 +374,6 @@ def _compute_semantic_temporal_wasserstein_from_map(
     rolls: List[str],
     n_jobs: int = -1,
 ) -> List[Dict]:
-    from joblib import Parallel, delayed
     import time as _time
 
     tasks = [(rep, m, s) for rep in rep_names for m in models for s in seeds]

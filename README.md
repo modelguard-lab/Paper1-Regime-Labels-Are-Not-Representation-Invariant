@@ -68,17 +68,28 @@ In `config.yaml`:
 
 ## Outputs
 
-- **Per-asset outputs**: `outputs/<asset>/`
-  - **Results**: `outputs/<asset>/results/`
-  - **Plots**: `outputs/<asset>/plots/`
+Per-asset step outputs are written under `outputs/<asset>/step_<N>/`:
 
-## One-file exports (requested)
+- `outputs/<asset>/step_<N>/results/` — per-rep CSV files (hard states, stability metrics, etc.)
+- `outputs/<asset>/step_<N>/plots/` — figures for that step configuration
+- `outputs/<asset>/step_<N>/key_results.csv` — aggregated metrics for this (asset, step)
+- `outputs/<asset>/step_<N>/analysis.md` — human-readable summary
 
-- **Per-asset results data**: `outputs/<asset>/key_results.csv`
-- **Per-asset results analysis**: `outputs/<asset>/analysis.md`
-- **All-assets combined (when assets > 1)**:
-  - `outputs/key_results_all_assets.csv`
-  - `outputs/analysis_all_assets.md`
+Robustness (K-sweep) outputs are written under `outputs/<asset>/robustness/K_<N>/` with the same sub-layout.
+
+**Multi-asset rollup**: `outputs/key_results_all_assets.csv` combines all assets.
+
+**Paper-relevant CSVs** (written to `outputs/` root by post-hoc scripts):
+
+| File | Content |
+| ---- | ------- |
+| `step_sweep_summary.csv` | ARI/NMI vs step size |
+| `robustness_ci_summary.csv` | K-state robustness confidence intervals |
+| `var_spread_summary.csv` | VaR spread across representations |
+| `rank_aligned_ordering_summary.csv` | Rank-aligned ordering metrics (Jaccard, Spearman) |
+| `kmeans_robustness_summary.csv` | K-means vs GMM/HMM cross-rep ARI |
+| `repr_decomp_summary.csv` | Representation-dimension decomposition |
+| `synthetic_groundtruth.csv` / `synthetic_groundtruth_psweep.csv` / `synthetic_groundtruth_ksweep.csv` | Synthetic ground-truth recovery results |
 
 ## What to report (paper-ready)
 
@@ -100,7 +111,7 @@ Interpretation template:
 
 ### Fit diagnostics (non-central, optional)
 
-Use `plots/scores_summary.csv` and `results/run.log` as diagnostics (not the main claim):
+Use `outputs/<asset>/step_<N>/plots/scores_summary.csv` and `outputs/run.log` as diagnostics (not the main claim):
 
 - Failure rate / logged exceptions
 - LogLik/AIC/BIC distributions by model (HMM vs GMM)
@@ -108,8 +119,6 @@ Use `plots/scores_summary.csv` and `results/run.log` as diagnostics (not the mai
 **If your machine freezes or BSODs**: The runs are CPU- and memory-heavy. Default is `n_jobs: 12`.
 If it still crashes, set `grid.n_jobs: 1` or `grid.n_jobs: 2` in
 `config.yaml` to reduce load.
-
-**Note**: Per-asset outputs are written under `outputs/{asset}/`.
 
 ## License
 

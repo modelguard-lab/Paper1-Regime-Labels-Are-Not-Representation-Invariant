@@ -7,7 +7,7 @@ with the new metrics (AMI, VI), runs aggregate permutation tests,
 and appends the results to each asset/step key_results.csv.
 
 Run from the project root:
-    python src/posthoc_ami_vi_perm.py
+    python run.py posthoc_ami
 """
 from __future__ import annotations
 

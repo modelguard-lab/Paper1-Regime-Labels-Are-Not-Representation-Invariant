@@ -15,6 +15,7 @@ Public functions:
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import math
@@ -25,9 +26,6 @@ from typing import Dict, List
 import numpy as np
 import pandas as pd
 import yaml
-from joblib import Parallel, delayed
-from joblib.externals.loky.process_executor import TerminatedWorkerError
-
 from src.core.runtime import configure_global_file_logging
 from src.core.utils import (
     _fmt_hms,
@@ -47,7 +45,6 @@ def _step_sweep_asset_worker(args_tuple):
     is fully independent (no nested-loky downgrade to threading).
     """
     asset, cfg, outputs_dir_str, step, inner_jobs, log_path_str = args_tuple
-    import copy
     outputs_dir_local = Path(outputs_dir_str)
     log_path_local = Path(log_path_str)
     try:
@@ -66,7 +63,6 @@ def _step_sweep_asset_worker(args_tuple):
 def _robustness_asset_worker(args_tuple):
     """Module-level worker for ProcessPoolExecutor; runs one (asset, K) combo."""
     asset, cfg, outputs_dir_str, k, inner_jobs, log_path_str = args_tuple
-    import copy
     outputs_dir_local = Path(outputs_dir_str)
     log_path_local = Path(log_path_str)
     try:
@@ -84,7 +80,6 @@ def _robustness_asset_worker(args_tuple):
 
 def _run_step_sweep(cfg: Dict, assets: List[str], outputs_dir: Path, steps: List[int]) -> None:
     """Run pipeline for each step in steps; asset-first layout; write step_sweep_summary.csv and ari_vs_step.png."""
-    import copy as _copy
     from concurrent.futures import ProcessPoolExecutor, as_completed
     import multiprocessing as _mp
     t0 = time.perf_counter()
@@ -107,7 +102,7 @@ def _run_step_sweep(cfg: Dict, assets: List[str], outputs_dir: Path, steps: List
     outputs_dir_str = str(outputs_dir)
 
     def _run_one_asset(asset: str, step: int) -> float:
-        cfg_copy = _copy.deepcopy(cfg)
+        cfg_copy = copy.deepcopy(cfg)
         cfg_copy["grid"]["step"] = int(step)
         cfg_copy["grid"]["n_jobs"] = inner_jobs
         out_dir = outputs_dir / safe_name(asset) / f"step_{int(step)}"
@@ -201,7 +196,6 @@ def _run_robustness_sweep(cfg: Dict, assets: List[str], outputs_dir: Path, robus
     t0 = time.perf_counter()
     logger.info("Starting robustness sweep; step=%d K=%s seeds=%d", step, ks, len(seeds))
 
-    import copy as _copy
     cfg["grid"] = cfg.get("grid") or {}
     cfg["grid"]["step"] = step
     cfg["grid"]["seeds"] = seeds
@@ -216,7 +210,7 @@ def _run_robustness_sweep(cfg: Dict, assets: List[str], outputs_dir: Path, robus
         )
 
     def _run_one_asset_k(asset: str, k: int) -> float:
-        cfg_copy = _copy.deepcopy(cfg)
+        cfg_copy = copy.deepcopy(cfg)
         cfg_copy["grid"]["n_states"] = [int(k)]
         cfg_copy["grid"]["n_jobs"] = inner_jobs
         out_dir = outputs_dir / safe_name(asset) / "robustness" / f"K_{int(k)}"

@@ -19,7 +19,7 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -607,9 +607,8 @@ def _run_single_asset(
         ordering.to_csv(plots_dir / "ordering_consistency_seed_summary.csv", index=False)
     # Save null baseline
     if ordering_null.get("null_n", 0) > 0:
-        import json as _json
         (plots_dir / "ordering_null_baseline.json").write_text(
-            _json.dumps(ordering_null, indent=2)
+            json.dumps(ordering_null, indent=2)
         )
         try:
             plot_ordering_consistency_summary(ordering, plots_dir / "ordering_consistency.png")

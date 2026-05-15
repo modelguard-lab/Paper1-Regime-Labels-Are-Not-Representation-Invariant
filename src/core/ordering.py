@@ -254,9 +254,6 @@ def _compute_ordering_consistency_crossrep_seed_summary(
     consistency across all rep pairs and rolls (after Hungarian matching).
     Parallelised over (model, seed) pairs via joblib.
     """
-    from joblib import Parallel, delayed
-    import time as _time
-
     tasks = [(m, s) for m in models for s in seeds]
     effective_jobs = min(n_jobs if n_jobs > 0 else 4, len(tasks))
 
@@ -475,8 +472,6 @@ def _compute_ordering_consistency_temporal_seed_summary(
     metrics after Hungarian matching, then average across roll pairs.
     Parallelised over (model, seed) pairs via joblib.
     """
-    from joblib import Parallel, delayed
-
     tasks = [(m, s) for m in models for s in seeds]
     effective_jobs = min(n_jobs if n_jobs > 0 else 4, len(tasks))
 
