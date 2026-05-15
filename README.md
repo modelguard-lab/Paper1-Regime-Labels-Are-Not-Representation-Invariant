@@ -70,10 +70,10 @@ In `config.yaml`:
 
 Per-asset step outputs are written under `outputs/<asset>/step_<N>/`:
 
-- `outputs/<asset>/step_<N>/results/` — per-rep CSV files (hard states, stability metrics, etc.)
-- `outputs/<asset>/step_<N>/plots/` — figures for that step configuration
-- `outputs/<asset>/step_<N>/key_results.csv` — aggregated metrics for this (asset, step)
-- `outputs/<asset>/step_<N>/analysis.md` — human-readable summary
+- `outputs/<asset>/step_<N>/results/`: per-rep CSV files (hard states, stability metrics, etc.)
+- `outputs/<asset>/step_<N>/plots/`: figures for that step configuration
+- `outputs/<asset>/step_<N>/key_results.csv`: aggregated metrics for this (asset, step)
+- `outputs/<asset>/step_<N>/analysis.md`: human-readable summary
 
 Robustness (K-sweep) outputs are written under `outputs/<asset>/robustness/K_<N>/` with the same sub-layout.
 

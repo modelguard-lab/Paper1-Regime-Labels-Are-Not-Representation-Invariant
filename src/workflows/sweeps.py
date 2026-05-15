@@ -541,7 +541,6 @@ def _run_robustness_sweep(cfg: Dict, assets: List[str], outputs_dir: Path, robus
         ordering_grouped.to_csv(outputs_dir / "ordering_ci_summary.csv", index=False)
 
         # Aggregate per-K independent null values from each asset/K subdirectory.
-        import json as _json
         null_rows_k: List[Dict] = []
         for asset in assets:
             for k in ks:
@@ -552,7 +551,7 @@ def _run_robustness_sweep(cfg: Dict, assets: List[str], outputs_dir: Path, robus
                 if not null_path.exists():
                     continue
                 try:
-                    nb = _json.loads(null_path.read_text())
+                    nb = json.loads(null_path.read_text())
                 except Exception:
                     continue
                 null_rows_k.append({
