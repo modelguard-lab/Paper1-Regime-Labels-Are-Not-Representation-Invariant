@@ -148,7 +148,10 @@ grid:
   #   - 4 outer x 6 inner via ProcessPoolExecutor: 100% CPU but BSOD'd Windows
   #   - 2 outer x 8 inner via ProcessPoolExecutor: step=21 analysis triggered
   #     BrokenProcessPool (nested-spawn + heavy shards exceeds Windows's tolerance)
-  n_jobs: 24
+  #   - sequential outer + 24 inner loky (2026-05-16): recurring TerminatedWorkerError
+  #     + two hard silent process deaths mid K-sweep; 24 concurrent workers each
+  #     loading numpy/scipy/hmmlearn + shards exceeds peak memory. Lowered to 8.
+  n_jobs: 8
   # Outer asset parallelism disabled: nested ProcessPoolExecutor+loky on Windows
   # fails reliably in the analysis phase for step=21 (large shards).
   n_asset_workers: 1
