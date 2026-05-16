@@ -65,7 +65,7 @@
 \textit{Background and gap.} Regime models underpin capital, risk-limit, and hedging decisions, yet existing literature evaluates one fitted specification at a time. Basel~IV and SR~11-7 require structural stability across admissible specifications.
 \textit{Contribution.} We provide the first systematic audit of representation invariance for discrete-state regime models, measuring partition agreement by ARI and coarse risk-ordering agreement by a matching-free rank-aligned metric calibrated against a $1/K$ null.
 \textit{Method.} We test four single-asset case studies under four model classes (HMM, GMM, k-means, spectral) at $K\in\{2,3,4,5\}$. Eight representations (seven for all assets, one VIX-based for S\&P~500 only) vary in standardisation, feature subset, rolling horizon, volatility estimator, and information source. A step-size sweep separates regime persistence from window overlap.
-\textit{Findings.} Cross-representation ARI is $0.35$--$0.45$ across all assets and model classes, well below the $0.65$ poor-recovery threshold; disagreement persists under k-means and at non-overlapping windows. Top-1 ordering Jaccard at $K=3$ is $0.47$ against a $1/K=0.20$ null, a $2.4\times$ excess comparable to the partition signal.
+\textit{Findings.} Cross-representation ARI is $0.34$--$0.43$ across all assets under HMM and GMM (with non-parametric robustness benchmarks confirming the same pattern at $0.29$--$0.47$), well below the $0.65$ poor-recovery threshold; disagreement persists under k-means and at non-overlapping windows. Top-1 ordering Jaccard at $K=3$ is $0.47$ against a $1/K=0.20$ null, a $2.4\times$ excess comparable to the partition signal.
 \textit{Significance.} Representation-conditional CVaR diverges by $39$--$73\%$ of the unconditional CVaR on average and approaches $300\%$ in COVID-19 stress (BTC-USD HMM peak $299\%$). We recommend a cross-representation envelope as a diagnostic complement to temporal backtesting; the registered admissible class (Supplementary Section~\ref{app:scope}) is narrow, so the reported ARI is a conservative upper bound.
 \end{abstract}
 
@@ -225,12 +225,12 @@ Step & Cross-rep.\ ARI & Temporal ARI (disjoint) & Temporal ARI (overlap) \\
 21 & 0.380 $\pm$ 0.024 & 0.406 $\pm$ 0.026 & 0.616 $\pm$ 0.014 \\
 63 & 0.381 $\pm$ 0.021 & 0.178 $\pm$ 0.026 & 0.540 $\pm$ 0.015 \\
 126 & 0.386 $\pm$ 0.019 & 0.192 $\pm$ 0.018 & 0.490 $\pm$ 0.010 \\
-252 & 0.384 $\pm$ 0.026 & 0.140 $\pm$ 0.017 & --- \\
+252 & 0.384 $\pm$ 0.026 & 0.140 $\pm$ 0.017 & n/a \\
 \bottomrule
 \end{tabular}
 \medskip
 \footnotesize
-\textit{Notes:} Step = number of business days between consecutive rolling windows; window $=252$; $K=3$; 20 seeds; 7 representations (rep\_a through rep\_d) for BTC-USD, GLD, and \IEF{}; 8 for \SPX{} (adds rep\_e, VIX-based); ARI averaged across GMM and HMM. CI = 95\% confidence interval across the four assets (i.e.\ $t_{3,0.975} \times \text{SE}$, where SE is the standard error of the four per-asset means). Temporal ARI (disjoint) compares labels on the $s$ dates unique to each window, paired positionally (Section~3.5); temporal ARI (overlap) compares labels on the $W - s$ shared dates. At step $= 252$ windows share no observations, so the overlap metric is undefined (---). The gap between the two temporal columns quantifies overlap inflation. \\
+\textit{Notes:} Step = number of business days between consecutive rolling windows; window $=252$; $K=3$; 20 seeds; 7 representations (rep\_a through rep\_d) for BTC-USD, GLD, and \IEF{}; 8 for \SPX{} (adds rep\_e, VIX-based); ARI averaged across GMM and HMM. CI = 95\% confidence interval across the four assets (i.e.\ $t_{3,0.975} \times \text{SE}$, where SE is the standard error of the four per-asset means). Temporal ARI (disjoint) compares labels on the $s$ dates unique to each window, paired positionally (Section~3.5); temporal ARI (overlap) compares labels on the $W - s$ shared dates. At step $= 252$ windows share no observations, so the overlap metric is undefined (n/a). The gap between the two temporal columns quantifies overlap inflation. \\
 \textit{Source:} Authors' calculations.
 \end{table}
 
@@ -294,7 +294,7 @@ GLD      & 0.416 & 0.363 & 0.459 $\pm$ 0.001 & 0.324 $\pm$ 0.003 \\
 \SPX{}   & 0.389 & 0.344 & 0.443 $\pm$ 0.000 & 0.358 $\pm$ 0.002 \\
 \IEF{}   & 0.399 & 0.336 & 0.443 $\pm$ 0.001 & 0.341 $\pm$ 0.003 \\
 \midrule
-Mean     & 0.409 & 0.351 & 0.452 $\pm$ 0.018 & 0.329 $\pm$ 0.027 \\
+Mean     & 0.409 & 0.351 & 0.452 $\pm$ 0.018 & 0.329 $\pm$ 0.044 \\
 \bottomrule
 \end{tabular}
 \par\medskip
@@ -313,7 +313,7 @@ Unlike supervised underspecification \citep{DAmouretal2022}, regime inference ha
 \section{Conclusion}
 \label{sec:conclusion}
 
-Across four single-asset case studies, two parametric models (HMM, GMM), non-parametric benchmarks (k-means, spectral), and five sources of representation variation, regime classifications are materially sensitive to admissible specification choices: cross-rep ARI is $0.35$--$0.45$, well below \citet{Steinley2004}'s $0.65$ threshold, and persists at non-overlapping windows. Coarse risk ordering is genuinely above chance but at comparable magnitude to the partition (top-1 Jaccard $0.47$ vs $1/K=0.20$), not categorically higher. The economic stakes are direct: regime-conditional CVaR diverges across representations by $39$--$73\%$ of unconditional CVaR on average and approaches $300\%$ during COVID-19 (Table~\ref{tab:cvar_spread}, BTC-USD HMM peak $299\%$), an unquantified model limitation that single-specification backtesting cannot detect under SR 11-7 \citep{SR117}.
+Across four single-asset case studies, two parametric models (HMM, GMM), non-parametric benchmarks (k-means, spectral), and five sources of representation variation, regime classifications are materially sensitive to admissible specification choices: cross-rep ARI is $0.34$--$0.43$ under HMM and GMM (non-parametric benchmarks $0.29$--$0.47$), well below \citet{Steinley2004}'s $0.65$ threshold, and persists at non-overlapping windows. Coarse risk ordering is genuinely above chance but at comparable magnitude to the partition (top-1 Jaccard $0.47$ vs $1/K=0.20$), not categorically higher. The economic stakes are direct: regime-conditional CVaR diverges across representations by $39$--$73\%$ of unconditional CVaR on average and approaches $300\%$ during COVID-19 (Table~\ref{tab:cvar_spread}, BTC-USD HMM peak $299\%$), an unquantified model limitation that single-specification backtesting cannot detect under SR 11-7 \citep{SR117}.
 
 \paragraph{Recommendation and workflow.}
 We recommend a \emph{representation envelope} as a diagnostic complement to temporal backtesting: under the registered admissible class, compute the regime-conditional risk measure for each $\Phi$ and report the point estimate alongside $[\min_\Phi, \max_\Phi]$. When envelope width exceeds 10\% of the unconditional measure or cross-representation ARI falls below 0.65, escalate to MRM committee and either adopt the conservative representation, form an ensemble, or document the limitation under SR 11-7's known-limitation provisions. Operationally this is a quarterly compute step yielding three numbers (cross-rep ARI, envelope width, worst-asset percentile) against documented triggers. As a worked \SPX{} 2020-Q1 example: on 23 March 2020 four representations assign \SPX{} to the high-volatility state (conditional CVaR ${\sim}{-}700$~bp/day) while two assign the medium state (${\sim}{-}200$~bp/day); the envelope width is ${\approx}500$~bp ($200\%$ of unconditional CVaR) and trailing cross-rep ARI is well below $0.65$, so both triggers fire and the day's classification escalates with two orders of magnitude of headroom above the materiality threshold (full walkthrough in Supplementary Section~\ref{app:worked_example}). Implementation reference is the open-source \texttt{mrv-lib} (\url{https://github.com/modelguard-lab/mrv-lib}); institutions are expected to calibrate the triggers to their own admissible class. Scope: four-asset case-study, daily univariate features, fixed 252-day window, discrete-state HMM/GMM and non-parametric k-means/spectral; extension to multivariate features, higher frequencies, and continuous-state model classes is left for future work.

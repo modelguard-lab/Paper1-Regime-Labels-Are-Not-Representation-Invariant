@@ -116,7 +116,7 @@ Use `outputs/<asset>/step_<N>/plots/scores_summary.csv` and `outputs/run.log` as
 - Failure rate / logged exceptions
 - LogLik/AIC/BIC distributions by model (HMM vs GMM)
 
-**If your machine freezes or BSODs**: The runs are CPU- and memory-heavy. Default is `n_jobs: 12`.
+**If your machine freezes or BSODs**: The runs are CPU- and memory-heavy. Default is `n_jobs: 24`.
 If it still crashes, set `grid.n_jobs: 1` or `grid.n_jobs: 2` in
 `config.yaml` to reduce load.
 
