@@ -110,6 +110,22 @@
 
 The following tables and analyses constitute the Internet Appendix accompanying the main manuscript.
 
+\section{Theoretical Background}
+\label{app:theory}
+
+\subsection{Identifiability of finite mixtures and Markov-switching models}
+
+The theoretical foundation for state inference in regime-switching models is the identifiability of finite mixtures. \citet{Teicher1963} and \citet{YakowitzSpragins1968} establish that, under regularity conditions, the parameters of a $K$-component finite mixture are recoverable up to label permutation from sufficiently large i.i.d.\ samples. \citet{Hamilton1989} extends this to Markov-switching models with hidden state dynamics, and \citet{Guidolin2011} surveys subsequent econometric refinements. Standard asymptotic theory therefore guarantees that two analysts working with the same feature mapping $\Phi$, the same parametric family $\mathcal{M}$, and infinite data converge to the same parameters and, consequently, the same partition (up to label permutation). This guarantee underwrites essentially all backtesting-based validation of regime models in current practice.
+
+\subsection{Limitations of the existing theory for representation invariance}
+\label{app:theory_limits}
+
+The asymptotic guarantee dissolves in three ways. First, asset returns are non-stationary on the time scales over which regime models are estimated, so the i.i.d.\ premise of \citet{Teicher1963} fails; finite-sample inference at a 252-day window is the operative regime. Second, and central to this paper, the result is conditional on a \emph{fixed} $\Phi$: there is no theorem covering two analysts who pick different $\Phi_1, \Phi_2$ on the same finite sample. The clustering-stability literature \citep{BenDavidLuxburgPal06,vonLuxburg2010} addresses stochastic perturbations of a fixed $\Phi$, not deliberate variation across economically motivated alternatives. Third, mixture identifiability presumes a known parametric emission family; Gaussian misspecification breaks the recovery guarantee even at the asymptotic limit. The supervised-learning analog is the underspecification framework of \citet{DAmouretal2022}, but regime inference lacks any held-out performance criterion to anchor the comparison. The descriptive diagnostic of Section~\ref{sec:diagnostic} is therefore the operative validation tool until a theory of representation-invariant stability exists.
+
+\subsection{Empirical fragility of regime inference in finance}
+
+Real-world episodes motivate this work. During the 2007--2009 GFC, regime models flagged the September 2008 transition with detection delays that varied by weeks across realised, GARCH, and implied-volatility features \citep{DanielssonJamesValenzuelaZer2016}. The 2020 COVID-19 crash compressed a regime-shift signature into one trading week, so the same model under different rolling-window horizons assigned the crisis to different states (Supplementary Figure~\ref{fig:rep_conflict}). \citet{Ampountolas2025FRL} and \citet{BlazsekKongShadoff2025} document feature- and specification-sensitivity in adjacent applications. In each case the disagreement is a systemic feature of the inference pipeline that current theoretical results do not bound, motivating an empirical diagnostic that makes the disagreement auditable.
+
 \section{Feature Representation Definitions}
 \label{app:representations}
 
