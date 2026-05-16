@@ -47,6 +47,7 @@ def run_synthetic_groundtruth(
     W: int = 252,
     T: int = 2200,
     persistence_p: float = 0.97,
+    drift_alpha: float = 0.6,
     sigmas: tuple[float, ...] | None = None,
 ) -> pd.DataFrame:
     """Run the synthetic ground-truth experiment.
@@ -59,7 +60,7 @@ def run_synthetic_groundtruth(
     - ari_vs_truth: ARI of inferred labels vs ground truth
     - ari_cross_rep: mean ARI vs other representations (same fit_seed)
     """
-    sp_kwargs: dict = {"T": T, "K": K, "persistence_p": persistence_p, "drift_alpha": 0.6}
+    sp_kwargs: dict = {"T": T, "K": K, "persistence_p": persistence_p, "drift_alpha": drift_alpha}
     if sigmas is not None:
         sp_kwargs["sigmas"] = sigmas
     params = SynthParams(**sp_kwargs)
@@ -163,33 +164,37 @@ def run_synthetic_groundtruth(
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
-    df = run_synthetic_groundtruth(n_seeds=10)
-    if df.empty:
+    out_dir = Path(__file__).resolve().parent.parent.parent / "outputs"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Baseline drift_alpha=0.6 (canonical 4-rep synthetic experiment cited in
+    # main text Section 3.6 and Supplementary Section S9).
+    df_main = run_synthetic_groundtruth(n_seeds=10, drift_alpha=0.6)
+    if df_main.empty:
         print("No results.")
         return
+    df_main.to_csv(out_dir / "synthetic_groundtruth.csv", index=False)
+    print(f"Saved baseline (alpha=0.6) to {out_dir / 'synthetic_groundtruth.csv'}")
 
-    out = Path(__file__).resolve().parent.parent.parent / "outputs" / "synthetic_groundtruth.csv"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    df.to_csv(out, index=False)
-    print(f"Saved to {out}")
+    # Drift ablation: alpha=0 (no deterministic drift component, states differ
+    # only in volatility). Sourced for the 4-rep alpha-invariance claim in
+    # main text Section 3.6 and the alpha-ablation cell of Supplementary
+    # Table S6.
+    df_alpha0 = run_synthetic_groundtruth(n_seeds=10, drift_alpha=0.0)
+    df_alpha0.to_csv(out_dir / "synthetic_groundtruth_alpha0.csv", index=False)
+    print(f"Saved alpha=0 ablation to {out_dir / 'synthetic_groundtruth_alpha0.csv'}")
     print()
 
-    # Summary
-    for model in ["hmm", "gmm"]:
-        sub = df[df["model"] == model]
-        if sub.empty:
-            continue
-        mean_truth = sub["ari_vs_truth"].mean()
-        mean_cross = sub["ari_cross_rep_mean"].dropna().mean()
-        print(f"{model.upper()}:")
-        print(f"  ARI vs ground truth: {mean_truth:.3f}")
-        print(f"  ARI cross-rep:       {mean_cross:.3f}")
-        if mean_truth > 0.6 and mean_cross < 0.5:
-            print("  → Plurality: representations recover truth but disagree with each other")
-        elif mean_truth < 0.5:
-            print("  → Instability: representations fail to recover truth")
-        else:
-            print("  → Mixed signal")
+    # Summary across both runs
+    for label, df in [("alpha=0.6 (baseline)", df_main), ("alpha=0   (ablation)", df_alpha0)]:
+        print(f"--- {label} ---")
+        for model in ["hmm", "gmm"]:
+            sub = df[df["model"] == model]
+            if sub.empty:
+                continue
+            mean_truth = sub["ari_vs_truth"].mean()
+            mean_cross = sub["ari_cross_rep_mean"].dropna().mean()
+            print(f"{model.upper()}: ARI vs truth = {mean_truth:.3f}; ARI cross-rep = {mean_cross:.3f}")
         print()
 
 
