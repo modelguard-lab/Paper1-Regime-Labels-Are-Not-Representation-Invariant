@@ -4,7 +4,7 @@ setlocal EnableDelayedExpansion
 cd /d "%~dp0"
 
 echo ============================================================
-echo Building Paper 1: Main Manuscript
+echo Building Paper 1: Main Manuscript + Internet Appendix
 echo ============================================================
 
 REM -----------------------------------------------------------
@@ -43,25 +43,51 @@ if not defined dt for /f %%a in ('powershell -NoProfile -Command "Get-Date -Form
 set "datestr=!dt:~0,8!"
 
 REM -----------------------------------------------------------
-REM Stage 1/2: Clean manuscript
+REM Stage 1/2: Clean manuscript + Internet Appendix
+REM   xr-hyper requires both .aux files; we therefore alternate
+REM   pdflatex passes between main and supplement so each picks up
+REM   the other's labels.
 REM -----------------------------------------------------------
 echo.
-echo [1/2] Building main manuscript ...
+echo [1/2] Building main manuscript + Internet Appendix ...
+
+REM First pass: produce both .aux files (cross-refs unresolved).
 pdflatex -interaction=nonstopmode main.tex >nul 2>&1
+pdflatex -interaction=nonstopmode supplement.tex >nul 2>&1
+
+REM bibtex on both.
 bibtex main >nul 2>&1
+bibtex supplement >nul 2>&1
+
+REM Second pass: resolve cross-doc refs and bib citations.
 pdflatex -interaction=nonstopmode main.tex >nul 2>&1
+pdflatex -interaction=nonstopmode supplement.tex >nul 2>&1
+
+REM Third pass: finalise.
 pdflatex -interaction=nonstopmode main.tex >nul 2>&1
+pdflatex -interaction=nonstopmode supplement.tex >nul 2>&1
 
 if not exist main.pdf (
     echo   ERROR: main.pdf was not generated. Check main.log for errors.
     exit /b 1
 )
+if not exist supplement.pdf (
+    echo   ERROR: supplement.pdf was not generated. Check supplement.log for errors.
+    exit /b 1
+)
 
 set "mainout=Paper1_Manuscript_FRL_!datestr!.pdf"
+set "supplout=Paper1_Appendix_FRL_!datestr!.pdf"
 copy /y main.pdf "!mainout!" >nul
+copy /y supplement.pdf "!supplout!" >nul
 echo   Generated: !mainout!
-for %%E in (aux log out bbl blg spl toc lof lot nav snm vrb synctex.gz fls fdb_latexmk) do del main.%%E 2>nul
+echo   Generated: !supplout!
+for %%E in (aux log out bbl blg spl toc lof lot nav snm vrb synctex.gz fls fdb_latexmk) do (
+    del main.%%E 2>nul
+    del supplement.%%E 2>nul
+)
 del main.pdf 2>nul
+del supplement.pdf 2>nul
 
 REM -----------------------------------------------------------
 REM Stage 2/2: Marked-up diff against the latest submitted baseline
@@ -134,8 +160,9 @@ del main_diff.pdf 2>nul
 echo.
 echo ============================================================
 echo Done.
-echo   Main manuscript : !mainout!
-if exist "Paper1_Manuscript_FRL_!datestr!_marked.pdf" echo   Marked diff     : Paper1_Manuscript_FRL_!datestr!_marked.pdf
+echo   Main manuscript    : !mainout!
+echo   Internet Appendix  : !supplout!
+if exist "Paper1_Manuscript_FRL_!datestr!_marked.pdf" echo   Marked diff        : Paper1_Manuscript_FRL_!datestr!_marked.pdf
 echo ============================================================
 endlocal
 
