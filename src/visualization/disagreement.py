@@ -61,6 +61,10 @@ def plot_disagreement_timeseries(
 
     if stress_periods is None:
         stress_periods = [
+            ("2007-10-09", "2009-03-09", "GFC"),
+            ("2011-07-22", "2011-10-04", "Euro debt"),
+            ("2015-08-11", "2016-02-11", "China shock"),
+            ("2018-09-20", "2018-12-24", "Vol shock"),
             ("2020-02-19", "2020-06-08", "COVID-19"),
             ("2022-01-03", "2022-10-14", "2022 inflation"),
         ]
@@ -150,19 +154,28 @@ def plot_disagreement_timeseries(
     ax_dis.tick_params(labelsize=7)
     ax_dis.grid(True, alpha=0.2, linewidth=0.5)
 
-    # Stress-period shading on both panels
-    for start, end, label in stress_periods:
+    # Stress-period shading on both panels. Labels alternate top / bottom
+    # within the price panel to prevent overlap when several episodes cluster.
+    for idx, (start, end, label) in enumerate(stress_periods):
         for ax in (ax_price, ax_dis):
             ax.axvspan(
                 pd.Timestamp(start), pd.Timestamp(end),
                 color="#ff7f0e", alpha=0.12, zorder=0,
             )
-        # Label at the top of each shaded band
         mid = pd.Timestamp(start) + (pd.Timestamp(end) - pd.Timestamp(start)) / 2
+        # Alternate: even-index labels at top of price panel, odd-index at bottom.
+        if idx % 2 == 0:
+            y_anchor = ax_price.get_ylim()[1]
+            y_offset = 2
+            va = "bottom"
+        else:
+            y_anchor = ax_price.get_ylim()[0]
+            y_offset = -2
+            va = "top"
         ax_price.annotate(
-            label, xy=(mid, ax_price.get_ylim()[1]),
-            xytext=(0, 2), textcoords="offset points",
-            ha="center", va="bottom", fontsize=5.5, color="#cc6600",
+            label, xy=(mid, y_anchor),
+            xytext=(0, y_offset), textcoords="offset points",
+            ha="center", va=va, fontsize=5.5, color="#cc6600",
             annotation_clip=False,
         )
 

@@ -243,6 +243,10 @@ def main(cfg: Optional[Dict] = None) -> None:
                     seed=seed,
                     smooth_window=63,
                     stress_periods=[
+                        ("2007-10-09", "2009-03-09", "GFC"),
+                        ("2011-07-22", "2011-10-04", "Euro debt"),
+                        ("2015-08-11", "2016-02-11", "China shock"),
+                        ("2018-09-20", "2018-12-24", "Vol shock"),
                         ("2020-02-19", "2020-06-08", "COVID-19"),
                         ("2022-01-03", "2022-10-14", "2022 inflation"),
                     ],

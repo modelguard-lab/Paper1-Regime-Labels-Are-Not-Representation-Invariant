@@ -43,26 +43,10 @@
 
 \title{Regime Labels Are Not Representation-Invariant:\\ Implications for Model Risk Governance}
 
-\author[1]{Kai Zheng}
-\ead{kaizhengnz@gmail.com}
-\ead[orcid]{0009-0004-6661-2023}
-\author[2]{Rand Low}
-\ead{rlow@bond.edu.au}
-\ead[orcid]{0000-0002-0290-7840}
-\author[1]{Ruili Wang\corref{cor1}}
-\ead{ruili.wang@massey.ac.nz}
-\ead[orcid]{0000-0003-2899-9816}
-
-\cortext[cor1]{Corresponding author: Ruili Wang}
-
-\affiliation[1]{organization={School of Mathematical and Computational Sciences\\Massey University},
-            city={Auckland},
-            country={New Zealand}}
-
-\affiliation[2]{organization={Bond Business School\\Bond University},
-            city={Gold Coast},
-            state={QLD},
-            country={Australia}}
+% Author names, affiliations, and correspondence withheld for double-blind review.
+% See the separate Title Page document submitted with the manuscript.
+\author[1]{Author Names Withheld for Double-Blind Review}
+\affiliation[1]{organization={Affiliations Withheld for Double-Blind Review}}
 
 \begin{abstract}
 \textit{Background and gap.} Regime models underpin capital, risk-limit, and hedging decisions, yet existing literature evaluates one fitted specification at a time. Basel~IV and SR~11-7 require structural stability across admissible specifications.
@@ -73,7 +57,7 @@
 \end{abstract}
 
 \begin{keyword}
-Basel IV \sep model risk governance \sep representation uncertainty \sep regime inference \sep non-stationarity \sep adjusted rand index
+Basel IV \sep model risk governance \sep representation uncertainty \sep regime inference \sep non-stationarity
 \end{keyword}
 
 \end{frontmatter}
@@ -81,7 +65,7 @@ Basel IV \sep model risk governance \sep representation uncertainty \sep regime 
 
 \section{Introduction}
 
-Market regimes are widely used in risk assessment and portfolio construction \citep{Hamilton1989}. Under Basel IV and SR 11-7 \citep{SR117}\footnote{In April 2026 SR 11-7 (2011) was rescinded and superseded by OCC Bulletin 2026-13 (Federal Reserve letter SR 26-2), jointly issued by the Office of the Comptroller of the Currency, the Federal Reserve Board, and the Federal Deposit Insurance Corporation. The validation principles invoked in this paper (model risk management programmes, undocumented model limitations, conceptual soundness) are preserved in the revised guidance.}, models must demonstrate structural stability, not merely acceptable backtests. Yet one layer remains largely unaudited: the representation layer, namely the choice of features, rolling windows, and preprocessing rules. Regime assignments depend on how the series is represented \citep{BengioCourvilleVincent2013}, much as factor model inference depends on the choice of characteristics \citep{GuKellyXiu2020,KellyPruittSu2019}. If the same market segment can be labelled differently under equally defensible representations, regime-based capital, hedging, and limit frameworks inherit a source of model risk that standard validation rarely quantifies \citep{DanielssonJamesValenzuelaZer2016}.
+Market regimes are widely used in risk assessment and portfolio construction \citep{Hamilton1989}. Under Basel IV and SR 11-7 \citep{SR117}, models must demonstrate structural stability, not merely acceptable backtests. Yet one layer remains largely unaudited: the representation layer, namely the choice of features, rolling windows, and preprocessing rules. Regime assignments depend on how the series is represented \citep{BengioCourvilleVincent2013}, much as factor model inference depends on the choice of characteristics \citep{GuKellyXiu2020,KellyPruittSu2019}. If the same market segment can be labelled differently under equally defensible representations, regime-based capital, hedging, and limit frameworks inherit a source of model risk that standard validation rarely quantifies \citep{DanielssonJamesValenzuelaZer2016}.
 
 The clustering stability literature \citep{BenDavidLuxburgPal06,vonLuxburg2010} formalises stability under a \emph{fixed} representation and algorithm; it does not address stability when the \emph{representation} itself varies. The supervised-learning analog is the underspecification framework of \citet{DAmouretal2022}, but regime inference has no held-out anchor with which to adjudicate between $\Phi_1$ and $\Phi_2$. Recent FRL work treats representation as a fixed input and evaluates performance after the fact \citep{Kirby2023FRL,BlazsekKongShadoff2025,Ampountolas2025FRL,WangYuanQu2025FRL}; \citet{Ampountolas2025FRL} note that feature choice shapes regime assignments, but evaluation uses forecasting performance rather than partition agreement.
 
@@ -133,10 +117,10 @@ S\&P 500 & 5312 & 0.033 & 1.207 & $-$12.77 & 10.96 & 2005--2026 \\
 IEF     & 5312 & 0.013 & 0.427 & $-$2.54  & 3.37  & 2005--2026 \\
 \bottomrule
 \end{tabular}
-\par\medskip
+\medskip
 \footnotesize
-\parbox{\linewidth}{\textit{Notes:} Mean, Std, Min, Max are in percentage points. BTC-USD Min ($-46.47\%$) occurred on 12 March 2020 (COVID-19 liquidity crisis); Max ($22.51\%$) on 7 December 2017. \\
-\textit{Source:} Yahoo Finance via \texttt{yfinance}; authors' calculations.}
+\textit{Notes:} Mean, Std, Min, Max are in percentage points. BTC-USD Min ($-46.47\%$) occurred on 12 March 2020 (COVID-19 liquidity crisis); Max ($22.51\%$) on 7 December 2017. \\
+\textit{Source:} Yahoo Finance via \texttt{yfinance}; authors' calculations.
 \end{table}
 
 \section{Empirical results}
@@ -158,9 +142,8 @@ Label disagreement translates directly into risk-estimate divergence. For each t
 \small
 \setlength{\tabcolsep}{5pt}
 \caption{Regime-conditional CVaR spread across representations as \% of unconditional CVaR at 5\%.
-Spread $=$ max$-$min conditional CVaR across admissible representations on each trading day: 7 for BTC-USD, GLD, and IEF; 8 for S\&P 500 (which additionally includes rep\_e, VIX-based).}
+Spread $=$ max$-$min conditional CVaR across admissible representations on each trading day: 7 for BTC-USD, GLD, and \IEF{}; 8 for \SPX{} (which additionally includes rep\_e, VIX-based).}
 \label{tab:cvar_spread}
-\resizebox{\textwidth}{!}{%
 \begin{tabular}{llcccc}
 \toprule
 Asset & Model & Mean & Max & COVID-19 peak & 2022 inflation peak \\
@@ -170,23 +153,22 @@ BTC-USD & GMM   & 68  & 136 & 262 & 62 \\
 BTC-USD & HMM   & 73  & 165 & 299 & 63 \\
 GLD     & GMM   & 54  & 134 & 66  & 33 \\
 GLD     & HMM   & 54  & 132 & 74  & 34 \\
-S\&P 500 & GMM  & 72  & 217 & 267 & 55 \\
-S\&P 500 & HMM  & 73  & 215 & 276 & 55 \\
-IEF     & GMM   & 39  & 94  & 80  & 52 \\
-IEF     & HMM   & 40  & 85  & 84  & 51 \\
+\SPX{}  & GMM   & 72  & 217 & 267 & 55 \\
+\SPX{}  & HMM   & 73  & 215 & 276 & 55 \\
+\IEF{}  & GMM   & 39  & 94  & 80  & 52 \\
+\IEF{}  & HMM   & 40  & 85  & 84  & 51 \\
 \midrule
 Avg.    & GMM   & 58  & 145 & 169 & 50 \\
 Avg.    & HMM   & 60  & 149 & 183 & 51 \\
 \bottomrule
-\end{tabular}%
-}
-\par\medskip
+\end{tabular}
+\medskip\\
 \footnotesize
-\parbox{\linewidth}{\textit{Notes:} Window $=252$, step $=21$, $K=3$, mean across 10 fitting seeds; the universal-class 7 representations (rep\_a, rep\_a\_unscaled, rep\_b, rep\_c1, rep\_c2, rep\_c3, rep\_d, defined in Table~\ref{tab:rep_definitions}) for BTC-USD, GLD, and \IEF{}; the same 7 plus rep\_e (VIX-based, \SPX{}-only) for \SPX{}. GMM seed-level variation is small (per-cell SD $\approx 1$ for the Mean column, $\approx 7$--$15$ for stress columns); HMM seed-level variation is materially larger (per-cell SD $\approx 4$--$9$ for Mean, up to $\approx 37$ for COVID-19), reflecting HMM's documented numerical sensitivity to initialisation. Per-seed values in \texttt{outputs/var\_spread\_summary\_per\_seed.csv}.
+\textit{Notes:} Window $=252$, step $=21$, $K=3$, mean across 10 fitting seeds; the universal-class 7 representations (rep\_a, rep\_a\_unscaled, rep\_b, rep\_c1, rep\_c2, rep\_c3, rep\_d, defined in Table~\ref{tab:rep_definitions}) for BTC-USD, GLD, and \IEF{}; the same 7 plus rep\_e (VIX-based, \SPX{}-only) for \SPX{}. GMM seed-level variation is small (per-cell SD $\approx 1$ for the Mean column, $\approx 7$--$15$ for stress columns); HMM seed-level variation is materially larger (per-cell SD $\approx 4$--$9$ for Mean, up to $\approx 37$ for COVID-19), reflecting HMM's documented numerical sensitivity to initialisation. Per-seed values in \texttt{outputs/var\_spread\_summary\_per\_seed.csv}.
 Conditional CVaR for state $k$ is the mean return in the worst-$\alpha$ quantile of in-state returns, $\alpha=5\%$.
 \emph{Sign convention:} the manuscript narrative reports CVaR as a negative-number return (loss as a negative log return) and the CVaR-spread as a positive percentage of unconditional CVaR; the source CSV \texttt{outputs/var\_spread\_summary.csv} stores the same quantity as a positive-magnitude tail loss in percentage points.
 Full results from \texttt{outputs/var\_spread\_summary.csv}.\\
-\textit{Source:} Authors' calculations.}
+\textit{Source:} Authors' calculations.
 \end{table}
 
 The mean spread is $58\%$ (GMM) and $60\%$ (HMM) of unconditional CVaR; during stress episodes it reaches several multiples, so a risk manager acting on one admissible representation would prescribe a materially different hedge ratio than one using an equally defensible alternative. HMM CVaR estimates carry materially more seed-level dispersion than GMM (per-cell SD across 10 seeds is $\approx 4$--$9$ for the Mean column and up to $\approx 37$ for the COVID-19 peak, vs $\approx 1$ and $\approx 7$--$15$ for GMM); single-seed HMM CVaR should therefore be reported with a seed-variability range, not as a point estimate.
@@ -206,10 +188,10 @@ GMM & 0.409 $\pm$ 0.002 & 0.390 $\pm$ 0.005 \\
 HMM & 0.351 $\pm$ 0.033 & 0.421 $\pm$ 0.028 \\
 \bottomrule
 \end{tabular}
-\par\medskip
+\medskip
 \footnotesize
-\parbox{\linewidth}{\textit{Notes:} Window $=252$, step $=21$, $K=3$; 20 random seeds; 7 representations (rep\_a, rep\_a\_unscaled, rep\_b, rep\_c1, rep\_c2, rep\_c3, rep\_d) for BTC-USD, GLD, and \IEF{}; 8 for \SPX{} (adds rep\_e, VIX-based). ARI: Adjusted Rand Index \citep{HubertArabie1985}; CI: asset-average 95\% confidence interval across seeds. Cross-rep.: averaged over all admissible representation pairs per model. Temporal: ARI between consecutive rolling windows (same representation), on disjoint window segments. AMI \citep{VinhEppsBailey2010} confirms the same ordering. HMM seed-level variance is wider than GMM (CI $\pm 0.033$ vs $\pm 0.002$). Per-pair tests ($B=99$, iid permutation and circular block bootstrap): the majority of pairs survive Benjamini-Hochberg adjustment at $q=0.05$ under both nulls; the CBB rejection rate is the more honest of the two and is materially lower than the iid rate. Failing pairs have observed ARI near zero. Per-asset BH-survival fractions, block lengths, and FDR-control details are in Supplementary Section~\ref{app:metrics}. \\
-\textit{Source:} Authors' calculations.}
+\textit{Notes:} Window $=252$, step $=21$, $K=3$; 20 random seeds; 7 representations (rep\_a, rep\_a\_unscaled, rep\_b, rep\_c1, rep\_c2, rep\_c3, rep\_d) for BTC-USD, GLD, and \IEF{}; 8 for \SPX{} (adds rep\_e, VIX-based). ARI: Adjusted Rand Index \citep{HubertArabie1985}; CI: asset-average 95\% confidence interval across seeds. Cross-rep.: averaged over all admissible representation pairs per model. Temporal: ARI between consecutive rolling windows (same representation), on disjoint window segments. AMI \citep{VinhEppsBailey2010} confirms the same ordering. HMM seed-level variance is wider than GMM (CI $\pm 0.033$ vs $\pm 0.002$). Per-pair tests ($B=99$, iid permutation and circular block bootstrap): the majority of pairs survive Benjamini-Hochberg adjustment at $q=0.05$ under both nulls; the CBB rejection rate is the more honest of the two and is materially lower than the iid rate. Failing pairs have observed ARI near zero. Per-asset BH-survival fractions, block lengths, and FDR-control details are in Supplementary Section~\ref{app:metrics}. \\
+\textit{Source:} Authors' calculations.
 \end{table}
 
 \subsection{Step sensitivity and overlap}
@@ -233,10 +215,10 @@ Step & Cross-rep.\ ARI & Temporal ARI (disjoint) & Temporal ARI (overlap) \\
 252 & 0.384 $\pm$ 0.026 & 0.140 $\pm$ 0.017 & n/a \\
 \bottomrule
 \end{tabular}
-\par\medskip
+\medskip
 \footnotesize
-\parbox{\linewidth}{\textit{Notes:} Step = number of business days between consecutive rolling windows; window $=252$; $K=3$; 20 seeds; 7 representations (rep\_a through rep\_d) for BTC-USD, GLD, and \IEF{}; 8 for \SPX{} (adds rep\_e, VIX-based); ARI averaged across GMM and HMM. CI = 95\% confidence interval across the four assets (i.e.\ $t_{3,0.975} \times \text{SE}$, where SE is the standard error of the four per-asset means). Temporal ARI (disjoint) compares labels on the $s$ dates unique to each window, paired positionally (Section~3.5); temporal ARI (overlap) compares labels on the $W - s$ shared dates. At step $= 252$ windows share no observations, so the overlap metric is undefined (n/a). The gap between the two temporal columns quantifies overlap inflation. \\
-\textit{Source:} Authors' calculations.}
+\textit{Notes:} Step = number of business days between consecutive rolling windows; window $=252$; $K=3$; 20 seeds; 7 representations (rep\_a through rep\_d) for BTC-USD, GLD, and \IEF{}; 8 for \SPX{} (adds rep\_e, VIX-based); ARI averaged across GMM and HMM. CI = 95\% confidence interval across the four assets (i.e.\ $t_{3,0.975} \times \text{SE}$, where SE is the standard error of the four per-asset means). Temporal ARI (disjoint) compares labels on the $s$ dates unique to each window, paired positionally (Section~3.5); temporal ARI (overlap) compares labels on the $W - s$ shared dates. At step $= 252$ windows share no observations, so the overlap metric is undefined (n/a). The gap between the two temporal columns quantifies overlap inflation. \\
+\textit{Source:} Authors' calculations.
 \end{table}
 
 \begin{figure}[H]
@@ -271,7 +253,7 @@ $K$ & GMM Cross & HMM Cross & GMM Temp & HMM Temp \\
 \end{tabular}
 \par\medskip
 \footnotesize
-\parbox{\linewidth}{\textit{Notes:} Cross = cross-representation ARI; Temp = temporal ARI. Window $=252$, step $=21$; 7 representations (rep\_a, rep\_a\_unscaled, rep\_b, rep\_c1, rep\_c2, rep\_c3, rep\_d) for BTC-USD, GLD, and \IEF{}; 8 for \SPX{} (adds rep\_e, VIX-based). The $K=3$ row corresponds to the baseline specification reported in Table~\ref{tab:baseline}.\\
+\parbox{0.95\linewidth}{\textit{Notes:} Cross = cross-representation ARI; Temp = temporal ARI. Window $=252$, step $=21$; 7 representations (rep\_a, rep\_a\_unscaled, rep\_b, rep\_c1, rep\_c2, rep\_c3, rep\_d) for BTC-USD, GLD, and \IEF{}; 8 for \SPX{} (adds rep\_e, VIX-based). The $K=3$ row corresponds to the baseline specification reported in Table~\ref{tab:baseline}.\\
 \textit{Source:} Authors' calculations.}
 \end{table}
 
@@ -296,16 +278,16 @@ Asset & GMM & HMM & k-means & Spectral \\
 \midrule
 BTC-USD  & 0.430 & 0.362 & 0.465 $\pm$ 0.002 & 0.293 $\pm$ 0.003 \\
 GLD      & 0.416 & 0.363 & 0.459 $\pm$ 0.001 & 0.324 $\pm$ 0.003 \\
-S\&P 500 & 0.389 & 0.344 & 0.443 $\pm$ 0.000 & 0.358 $\pm$ 0.002 \\
-IEF      & 0.399 & 0.336 & 0.443 $\pm$ 0.001 & 0.341 $\pm$ 0.003 \\
+\SPX{}   & 0.389 & 0.344 & 0.443 $\pm$ 0.000 & 0.358 $\pm$ 0.002 \\
+\IEF{}   & 0.399 & 0.336 & 0.443 $\pm$ 0.001 & 0.341 $\pm$ 0.003 \\
 \midrule
 Mean     & 0.409 & 0.351 & 0.452 $\pm$ 0.018 & 0.329 $\pm$ 0.044 \\
 \bottomrule
 \end{tabular}
 \par\medskip
 \footnotesize
-\parbox{\linewidth}{\textit{Notes:} K-means and spectral from \texttt{outputs/kmeans\_robustness\_summary.csv}, computed by \texttt{src/experiments/posthoc\_kmeans\_robustness.py}; 7 representations (rep\_a, rep\_a\_unscaled, rep\_b, rep\_c1, rep\_c2, rep\_c3, rep\_d) for BTC-USD, GLD, \IEF{}; 8 (adds rep\_e, VIX-based) for \SPX{}. Spectral uses k-NN affinity ($k=10$) with k-means assignment. GMM and HMM columns from Table~\ref{tab:baseline} per-asset means. The CI in the Mean row is across the four per-asset means.\\
-\textit{Source:} Authors' calculations.}
+\textit{Notes:} K-means and spectral from \texttt{outputs/kmeans\_robustness\_summary.csv}, computed by \texttt{src/experiments/posthoc\_kmeans\_robustness.py}; 7 representations (rep\_a, rep\_a\_unscaled, rep\_b, rep\_c1, rep\_c2, rep\_c3, rep\_d) for BTC-USD, GLD, \IEF{}; 8 (adds rep\_e, VIX-based) for \SPX{}. Spectral uses k-NN affinity ($k=10$) with k-means assignment. GMM and HMM columns from Table~\ref{tab:baseline} per-asset means. The CI in the Mean row is across the four per-asset means.\\
+\textit{Source:} Authors' calculations.
 \end{table}
 
 Across four model classes spanning parametric Gaussian (HMM, GMM), centroid-only (k-means), and graph-Laplacian (spectral) inference, every asset-method cell is well below $0.65$ (Table~\ref{tab:kmeans_robustness}). The asset-average ranking is spectral $0.329 <$ HMM $0.351 <$ GMM $0.409 <$ k-means $0.452$: the model class with the fewest parametric constraints (spectral) yields the \emph{lowest} cross-rep agreement, while the most constrained partition geometry (k-means convex centroids) yields the highest. The cross-rep finding is therefore not an artefact of Gaussian emissions; if anything, relaxing the parametric structure strengthens it.

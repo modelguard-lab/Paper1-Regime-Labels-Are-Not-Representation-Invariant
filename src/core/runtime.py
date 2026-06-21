@@ -3,7 +3,7 @@ Logging and runtime configuration for Paper 1 (Representation-Invariant).
 
 Console + global file handler + tee + Windows UTF-8 / UTF-16 cleanup +
 BLAS thread env defaults. Aligned with the canonical structure defined
-in knowledge-base/STRUCTURE.md.
+in knowledge-base/conventions/STRUCTURE.md.
 """
 
 from __future__ import annotations

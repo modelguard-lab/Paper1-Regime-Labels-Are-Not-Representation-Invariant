@@ -83,13 +83,10 @@
 
 \author[1]{Kai Zheng}
 \ead{kaizhengnz@gmail.com}
-\ead[orcid]{0009-0004-6661-2023}
 \author[2]{Rand Low}
 \ead{rlow@bond.edu.au}
-\ead[orcid]{0000-0002-0290-7840}
 \author[1]{Ruili Wang\corref{cor1}}
 \ead{ruili.wang@massey.ac.nz}
-\ead[orcid]{0000-0003-2899-9816}
 
 \cortext[cor1]{Corresponding author: Ruili Wang}
 
@@ -160,10 +157,10 @@ rep\_e$^*$     & VIXLevel, VIXChange, VIXPct, CVaR  & vix\_std=120, vix\_chg=5, 
 \par\medskip
 \begin{minipage}{\linewidth}
 \footnotesize
-\parbox{\linewidth}{\textit{Notes:} Std.\ = standardization; $z$-120d = rolling $z$-score with 120-day lookback; None = no standardization. Vol = annualised realised volatility; GARCHVol = annualised conditional volatility from a GARCH(1,1) model; Drawdown = rolling drawdown from period high; MaxDD = rolling maximum drawdown; VaR/CVaR = historical Value-at-Risk/Conditional VaR at 5\%; RealSkew = rolling realised skewness; VolStab = volatility-of-volatility. VIXLevel/VIXChange/VIXPct = rolling $z$-scored VIX level, 5-day log-change, and rolling 60-day empirical percentile of VIX. Representations rep\_a through rep\_c3 share a rolling-window architecture; rep\_d uses a parametric autoregressive volatility estimator (GARCH(1,1)); rep\_e uses the VIX implied-volatility index as a forward-looking, market-based signal. The GARCH(1,1) implementation in \texttt{src/core/features.py} falls back to a 20-day rolling realised volatility when the rolling window contains fewer than 50 observations or when the GARCH MLE fails; in the published pipeline \texttt{outputs/run.log} contains zero \texttt{GARCH\_FALLBACK} events, so rep\_d is GARCH-only and the rep\_d-vs-rep\_a contrast is not contaminated by silent fallback. $^*$rep\_e is restricted to the \SPX{} (VIX is the S\&P 500 implied vol index).
+\textit{Notes:} Std.\ = standardization; $z$-120d = rolling $z$-score with 120-day lookback; None = no standardization. Vol = annualised realised volatility; GARCHVol = annualised conditional volatility from a GARCH(1,1) model; Drawdown = rolling drawdown from period high; MaxDD = rolling maximum drawdown; VaR/CVaR = historical Value-at-Risk/Conditional VaR at 5\%; RealSkew = rolling realised skewness; VolStab = volatility-of-volatility. VIXLevel/VIXChange/VIXPct = rolling $z$-scored VIX level, 5-day log-change, and rolling 60-day empirical percentile of VIX. Representations rep\_a through rep\_c3 share a rolling-window architecture; rep\_d uses a parametric autoregressive volatility estimator (GARCH(1,1)); rep\_e uses the VIX implied-volatility index as a forward-looking, market-based signal. The GARCH(1,1) implementation in \texttt{src/core/features.py} falls back to a 20-day rolling realised volatility when the rolling window contains fewer than 50 observations or when the GARCH MLE fails; in the published pipeline \texttt{outputs/run.log} contains zero \texttt{GARCH\_FALLBACK} events, so rep\_d is GARCH-only and the rep\_d-vs-rep\_a contrast is not contaminated by silent fallback. $^*$rep\_e is restricted to the \SPX{} (VIX is the S\&P 500 implied vol index).
 
 \textit{Source:} Authors' design.
-\end{minipage}}
+\end{minipage}
 \end{table}
 
 \section{Ordering Consistency}
@@ -206,10 +203,10 @@ Mean     & 0.932 & 0.932 & 0.892 & 0.898 & 0.909 & 0.862 \\
 \par\medskip
 \begin{minipage}{\linewidth}
 \footnotesize
-\parbox{\linewidth}{\textit{Notes:} The highest-risk state in each rolling window is identified by the most negative in-state Conditional VaR (CVaR at $\alpha = 0.05$). Top-1 Agreement = fraction of windows where two representations agree on the high-risk label after Hungarian matching on $|\Delta\mathrm{CVaR}|+|\Delta\mathrm{Vol}|$. Spearman Rank Corr.\ = Spearman correlation of CVaR-based risk ranks after the same matching. Observed values are averaged across GMM and HMM models, 20 seeds, and all representation pairs. Perm Null = per-asset mean under 500 random label permutations with Hungarian matching (structurally inflated; see methodological caveat). Indep Null = both compared sequences are independent uniform random $K$-partitions, providing a symmetric chance baseline.
+\textit{Notes:} The highest-risk state in each rolling window is identified by the most negative in-state Conditional VaR (CVaR at $\alpha = 0.05$). Top-1 Agreement = fraction of windows where two representations agree on the high-risk label after Hungarian matching on $|\Delta\mathrm{CVaR}|+|\Delta\mathrm{Vol}|$. Spearman Rank Corr.\ = Spearman correlation of CVaR-based risk ranks after the same matching. Observed values are averaged across GMM and HMM models, 20 seeds, and all representation pairs. Perm Null = per-asset mean under 500 random label permutations with Hungarian matching (structurally inflated; see methodological caveat). Indep Null = both compared sequences are independent uniform random $K$-partitions, providing a symmetric chance baseline.
 
 \textit{Source:} Authors' calculations.
-\end{minipage}}
+\end{minipage}
 \end{table}
 
 % source: outputs/ordering_null_by_k.csv  (per-K observed vs perm/indep nulls)
@@ -233,10 +230,10 @@ $K$ & Observed & Perm Null & Indep Null & Observed & Perm Null & Indep Null \\
 \par\medskip
 \begin{minipage}{\linewidth}
 \footnotesize
-\parbox{\linewidth}{\textit{Notes:} $K=3$ values from Table~\ref{tab:ordering}.  $K\in\{4,5\}$ observed values are means across 4 assets and 2 models (GMM, HMM).  Perm Null: per-asset mean under 500 random label permutations with Hungarian matching (structurally inflated).  Indep Null: both compared sequences are independent uniform random $K$-partitions; note that across (asset, $K$) the two null channels span $0.41$--$0.99$ for top-1 and $0.80$--$0.95$ for Spearman, far above the $1/K$ implied by a symmetric chance baseline, because the Hungarian + CVaR matching rule used to compute top-1 and Spearman constructively rank-aligns state extremes regardless of partition structure (see main text of this appendix).  Results saved to \texttt{ordering\_null\_by\_k.csv}.
+\textit{Notes:} $K=3$ values from Table~\ref{tab:ordering}.  $K\in\{4,5\}$ observed values are means across 4 assets and 2 models (GMM, HMM).  Perm Null: per-asset mean under 500 random label permutations with Hungarian matching (structurally inflated).  Indep Null: both compared sequences are independent uniform random $K$-partitions; note that across (asset, $K$) the two null channels span $0.41$--$0.99$ for top-1 and $0.80$--$0.95$ for Spearman, far above the $1/K$ implied by a symmetric chance baseline, because the Hungarian + CVaR matching rule used to compute top-1 and Spearman constructively rank-aligns state extremes regardless of partition structure (see main text of this appendix).  Results saved to \texttt{ordering\_null\_by\_k.csv}.
 
 \textit{Source:} Authors' calculations.
-\end{minipage}}
+\end{minipage}
 \end{table}
 
 % source: outputs/rank_aligned_ordering_summary.csv  (per-K observed)
@@ -262,10 +259,10 @@ $K$ & Observed & Indep Null & Observed & Indep Null & Observed & Indep Null \\
 \par\medskip
 \begin{minipage}{\linewidth}
 \footnotesize
-\parbox{\linewidth}{\textit{Notes:} Observed values are means across four assets, GMM and HMM models, 20 seeds, and all admissible $(A, B)$ representation pairs at window $=252$, step $=21$. For each pair and window, per-state CVaR ($\alpha=0.05$) is computed from in-state returns, each state sequence is relabelled so that label 0 corresponds to the worst-CVaR state, then the two relabelled sequences are compared pointwise. Independent null expectations are given analytically ($1/K$, $1/(2K-1)$, $0$) and confirmed by Monte Carlo to within $\pm 0.01$ at $n_\text{perm}=500$ per asset. The observed-to-null excess is between $1.6\times$ and $3.4\times$ across $K$, genuinely above chance, but the absolute magnitude is comparable to the partition-level cross-representation ARI in Table~\ref{tab:baseline} ($0.34$--$0.43$). Computation script: \texttt{src/experiments/posthoc\_rank\_aligned\_ordering.py}; outputs to \texttt{outputs/rank\_aligned\_ordering\_summary.csv}.
+\textit{Notes:} Observed values are means across four assets, GMM and HMM models, 20 seeds, and all admissible $(A, B)$ representation pairs at window $=252$, step $=21$. For each pair and window, per-state CVaR ($\alpha=0.05$) is computed from in-state returns, each state sequence is relabelled so that label 0 corresponds to the worst-CVaR state, then the two relabelled sequences are compared pointwise. Independent null expectations are given analytically ($1/K$, $1/(2K-1)$, $0$) and confirmed by Monte Carlo to within $\pm 0.01$ at $n_\text{perm}=500$ per asset. The observed-to-null excess is between $1.6\times$ and $3.4\times$ across $K$, genuinely above chance, but the absolute magnitude is comparable to the partition-level cross-representation ARI in Table~\ref{tab:baseline} ($0.34$--$0.43$). Computation script: \texttt{src/experiments/posthoc\_rank\_aligned\_ordering.py}; outputs to \texttt{outputs/rank\_aligned\_ordering\_summary.csv}.
 
 \textit{Source:} Authors' calculations.
-\end{minipage}}
+\end{minipage}
 \end{table}
 
 \section{Per-pair Permutation Test Details}
@@ -284,9 +281,7 @@ The iid permutation null (random shuffle of one representation's label sequence)
 \label{tab:perm_per_asset}
 \begin{tabular}{lcccccc}
 \toprule
- & & \multicolumn{2}{c}{Perm null} & \multicolumn{2}{c}{CBB null} & \\
-\cmidrule(lr){3-4}\cmidrule(lr){5-6}
-Asset & Mean ARI & Median $p$ & BH \% & Median $p$ & BH \% & Block (days) \\
+Asset & Mean ARI & Median $p_\text{perm}$ & \% BH $q<0.05$ (perm) & Median $p_\text{CBB}$ & \% BH $q<0.05$ (CBB) & Median block (days) \\
 \midrule
 BTC-USD & 0.396 & 0.010 & 98.5 & 0.010 & 71.2 & 26 \\
 GLD & 0.389 & 0.010 & 98.2 & 0.010 & 69.4 & 27 \\
@@ -296,7 +291,7 @@ IEF & 0.367 & 0.010 & 97.9 & 0.020 & 67.7 & 26 \\
 \end{tabular}
 \medskip
 \footnotesize
-\parbox{\linewidth}{\textit{Notes:} Numeric rows are auto-synchronised from \texttt{outputs/<asset>/step\_21/key\_results.csv} by \texttt{src/workflows/paper\_autofill.py} after each posthoc run; manually edited values are overwritten on the next sync. Pairs not surviving BH at $q=0.05$ correspond to (model, seed, rolling window) combinations in which the observed ARI lies near zero; both the observed statistic and the resampled null concentrate near zero for these pairs, so the test correctly fails to reject. The CBB column's BH-survival fraction is materially lower than the iid-permutation column's, as expected: preserving the within-series autocorrelation widens the null distribution and makes raw $p$-values larger. The principal finding (mean cross-representation ARI well below 0.65) is established by the aggregate ARI distribution rather than by universal per-pair rejection, and survives both nulls.}
+\textit{Notes:} Numeric rows are auto-synchronised from \texttt{outputs/<asset>/step\_21/key\_results.csv} by \texttt{src/workflows/paper\_autofill.py} after each posthoc run; manually edited values are overwritten on the next sync. Pairs not surviving BH at $q=0.05$ correspond to (model, seed, rolling window) combinations in which the observed ARI lies near zero; both the observed statistic and the resampled null concentrate near zero for these pairs, so the test correctly fails to reject. The CBB column's BH-survival fraction is materially lower than the iid-permutation column's, as expected: preserving the within-series autocorrelation widens the null distribution and makes raw $p$-values larger. The principal finding (mean cross-representation ARI well below 0.65) is established by the aggregate ARI distribution rather than by universal per-pair rejection, and survives both nulls.
 \end{table}
 
 \section{Stability Metric Details}
@@ -324,22 +319,22 @@ The empirical diagnostic in equation~(2) is formally an infimum over representat
 \toprule
 Asset & Model & Min ARI & Worst pair \\
 \midrule
-BTC-USD  & GMM & 0.274 & rep\_a\_unscaled vs rep\_b \\
-BTC-USD  & HMM & 0.236 & rep\_a\_unscaled vs rep\_b \\
-GLD      & GMM & 0.238 & rep\_a\_unscaled vs rep\_b \\
-GLD      & HMM & 0.214 & rep\_a\_unscaled vs rep\_b \\
-S\&P 500 & GMM & 0.147 & rep\_a\_unscaled vs rep\_e \\
-S\&P 500 & HMM & 0.158 & rep\_a\_unscaled vs rep\_e \\
-IEF      & GMM & 0.219 & rep\_a\_unscaled vs rep\_b \\
-IEF      & HMM & 0.201 & rep\_a\_unscaled vs rep\_b \\
+BTC-USD & GMM & 0.274 & rep\_a\_unscaled vs rep\_b \\
+BTC-USD & HMM & 0.236 & rep\_a\_unscaled vs rep\_b \\
+GLD     & GMM & 0.238 & rep\_a\_unscaled vs rep\_b \\
+GLD     & HMM & 0.214 & rep\_a\_unscaled vs rep\_b \\
+\SPX{}  & GMM & 0.147 & rep\_a\_unscaled vs rep\_e \\
+\SPX{}  & HMM & 0.158 & rep\_a\_unscaled vs rep\_e \\
+\IEF{}  & GMM & 0.219 & rep\_a\_unscaled vs rep\_b \\
+\IEF{}  & HMM & 0.201 & rep\_a\_unscaled vs rep\_b \\
 \bottomrule
 \end{tabular}
 \par\medskip
 \begin{minipage}{\linewidth}
 \footnotesize
-\parbox{\linewidth}{\textit{Notes:} For each (asset, model) cell, ARI is averaged across 20 seeds and all rolling windows for every admissible representation pair, and the smallest such pair-mean is reported. The minimum is consistently driven by the unstandardised baseline (rep\_a\_unscaled) paired against either an alternative feature philosophy (rep\_b: realised skewness and stability-of-volatility) or a different information source (rep\_e: VIX implied volatility, \SPX{} only). Computed from \texttt{outputs/<asset>/step\_21/results/rep\_stability.json}. \\
+\textit{Notes:} For each (asset, model) cell, ARI is averaged across 20 seeds and all rolling windows for every admissible representation pair, and the smallest such pair-mean is reported. The minimum is consistently driven by the unstandardised baseline (rep\_a\_unscaled) paired against either an alternative feature philosophy (rep\_b: realised skewness and stability-of-volatility) or a different information source (rep\_e: VIX implied volatility, \SPX{} only). Computed from \texttt{outputs/<asset>/step\_21/results/rep\_stability.json}. \\
 \textit{Source:} Authors' calculations.
-\end{minipage}}
+\end{minipage}
 \end{table}
 
 \section{HMM Convergence Audit}
@@ -389,7 +384,7 @@ Drift $\alpha$ & GMM recovery ARI & HMM recovery ARI \\
 \end{tabular}
 \par\medskip
 \footnotesize
-\parbox{\linewidth}{\textit{Notes:} Recovery ARI = Adjusted Rand Index between inferred states and the true DGP partition, across 5 DGP seeds (mean $\pm$ 95\% CI). $p=0.97, K=3, T=2{,}200$ in both rows; two synthetic representations (rep\_u: shorter-horizon rolling features, 20d vol / 60d drawdown / 60d tail; rep\_l: longer-horizon rolling features, 60d vol / 120d drawdown / 120d tail); from \texttt{outputs/synthetic\_sanity/recovery\_table.csv}. \textit{Source:} Authors' calculations.}
+\textit{Notes:} Recovery ARI = Adjusted Rand Index between inferred states and the true DGP partition, across 5 DGP seeds (mean $\pm$ 95\% CI). $p=0.97, K=3, T=2{,}200$ in both rows; two synthetic representations (rep\_u: shorter-horizon rolling features, 20d vol / 60d drawdown / 60d tail; rep\_l: longer-horizon rolling features, 60d vol / 120d drawdown / 120d tail); from \texttt{outputs/synthetic\_sanity/recovery\_table.csv}. \textit{Source:} Authors' calculations.
 \end{table}
 
 % source: outputs/synthetic_groundtruth_psweep_summary.csv  (per-p means)
@@ -413,7 +408,7 @@ Persistence $p$ & Recovery ARI & Cross-rep ARI & Recovery ARI & Cross-rep ARI \\
 \end{tabular}
 \par\medskip
 \footnotesize
-\parbox{\linewidth}{\textit{Notes:} Each cell is mean $\pm$ standard error across 10 DGP seeds $\times$ 3 fit seeds $\times$ 4 representations ($n=120$). Recovery ARI = ARI between inferred state assignments and the ground-truth Markov chain. Cross-rep ARI = mean ARI across the 6 cross-representation pairs computed within the same fit seed. Both ARIs remain well below the $0.65$ partition-recovery threshold at every persistence level; at $p=0.95$ recovery ARI falls below cross-rep ARI, which is consistent with shared misspecification rather than convergence to truth. From \texttt{outputs/synthetic\_groundtruth\_psweep\_summary.csv}, generated by \texttt{python run.py posthoc\_synthetic\_psweep}. \textit{Source:} Authors' calculations.}
+\textit{Notes:} Each cell is mean $\pm$ standard error across 10 DGP seeds $\times$ 3 fit seeds $\times$ 4 representations ($n=120$). Recovery ARI = ARI between inferred state assignments and the ground-truth Markov chain. Cross-rep ARI = mean ARI across the 6 cross-representation pairs computed within the same fit seed. Both ARIs remain well below the $0.65$ partition-recovery threshold at every persistence level; at $p=0.95$ recovery ARI falls below cross-rep ARI, which is consistent with shared misspecification rather than convergence to truth. From \texttt{outputs/synthetic\_groundtruth\_psweep\_summary.csv}, generated by \texttt{python run.py posthoc\_synthetic\_psweep}. \textit{Source:} Authors' calculations.
 \end{table}
 
 % source: outputs/synthetic_groundtruth_ksweep_summary.csv  (per-K means)
@@ -437,7 +432,7 @@ State count $K$ & Recovery ARI & Cross-rep ARI & Recovery ARI & Cross-rep ARI \\
 \end{tabular}
 \par\medskip
 \footnotesize
-\parbox{\linewidth}{\textit{Notes:} Each cell is mean $\pm$ standard error across 10 DGP seeds $\times$ 3 fit seeds $\times$ 4 representations ($n=120$). Volatility levels are log-spaced from $0.006$ to $0.024$ across the $K$ states (matching the baseline $K=3$ tuple $(0.006, 0.012, 0.024)$ exactly), so the DGP is comparable across $K$ values up to the partition granularity. The recovery shortfall persists at every $K$: both ARIs remain well below the $0.65$ partition-recovery threshold. From \texttt{outputs/synthetic\_groundtruth\_ksweep\_summary.csv}, generated by \texttt{python run.py posthoc\_synthetic\_ksweep}. \textit{Source:} Authors' calculations.}
+\textit{Notes:} Each cell is mean $\pm$ standard error across 10 DGP seeds $\times$ 3 fit seeds $\times$ 4 representations ($n=120$). Volatility levels are log-spaced from $0.006$ to $0.024$ across the $K$ states (matching the baseline $K=3$ tuple $(0.006, 0.012, 0.024)$ exactly), so the DGP is comparable across $K$ values up to the partition granularity. The recovery shortfall persists at every $K$: both ARIs remain well below the $0.65$ partition-recovery threshold. From \texttt{outputs/synthetic\_groundtruth\_ksweep\_summary.csv}, generated by \texttt{python run.py posthoc\_synthetic\_ksweep}. \textit{Source:} Authors' calculations.
 \end{table}
 
 \section{Supplementary Figures}
@@ -481,10 +476,10 @@ All pairs (baseline)                    & 21+7 & \multicolumn{2}{c}{see Table~\r
 \par\medskip
 \begin{minipage}{\linewidth}
 \footnotesize
-\parbox{\linewidth}{\textit{Notes:} Pair counts for the 7-rep universal class; rep\_e adds 7 additional pairs for \SPX{} only. Values sorted by mean ARI descending. Computed from \texttt{repr\_decomp\_summary.csv} via \texttt{src/experiments/posthoc\_repr\_decomp.py}. For the seven universal-class rows, CI = $1.96 \times$SE across the eight per-(asset, model) group means within each category. The VIX row is \SPX{}-only, so we instead report $1.96 \times$SE across the 14 (model, pair) observations within the asset (7 rep\_e-pair $\times$ 2 models); a normal-approximation CI on the two (asset, model) group means alone would be misleadingly tight ($\pm 0.005$) given $n=2$.
+\textit{Notes:} Pair counts for the 7-rep universal class; rep\_e adds 7 additional pairs for \SPX{} only. Values sorted by mean ARI descending. Computed from \texttt{repr\_decomp\_summary.csv} via \texttt{src/experiments/posthoc\_repr\_decomp.py}. For the seven universal-class rows, CI = $1.96 \times$SE across the eight per-(asset, model) group means within each category. The VIX row is \SPX{}-only, so we instead report $1.96 \times$SE across the 14 (model, pair) observations within the asset (7 rep\_e-pair $\times$ 2 models); a normal-approximation CI on the two (asset, model) group means alone would be misleadingly tight ($\pm 0.005$) given $n=2$.
 
 \textit{Source:} Authors' calculations.
-\end{minipage}}
+\end{minipage}
 \end{table}
 
 \paragraph{Variance decomposition.}

@@ -308,7 +308,7 @@ def plot_representation_failure_matrix(
         Patch(facecolor=_color_for_level("on", "risk"), edgecolor="none", label=" low-risk"),
         Patch(facecolor=_color_for_level("off", "risk"), edgecolor="none", label=" high-risk"),
     ]
-    ax_top.legend(handles=legend_elements, loc="upper left", fontsize=6,
+    ax_top.legend(handles=legend_elements, loc="lower right", fontsize=6,
                   framealpha=0.7, ncol=2, columnspacing=0.4)
 
     # --- Bottom panel: conflict indicator as filled step function ---
