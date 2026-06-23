@@ -5,7 +5,7 @@ type: software
 authors:
   - family-names: "Zheng"
     given-names: "Kai"
-license: "MIT"
+license: AGPL-3.0-or-later
 repository-code: "https://github.com/modelguard-lab/Paper1-Regime-Labels-Are-Not-Representation-Invariant"
 keywords:
   - regime detection
