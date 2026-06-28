@@ -1,0 +1,67 @@
+### Python
+__pycache__/
+*.py[cod]
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+### Virtual environments
+.venv/
+venv/
+ENV/
+env/
+.env
+
+### Jupyter
+.ipynb_checkpoints/
+
+### Data / outputs
+data/**/*
+outputs/**/*
+
+### OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+### Word temporary files
+paper/~$*.docx
+
+### Local manuscript snapshots (kept locally, not versioned)
+paper/main_frl_*.tex
+
+### PDFs and paper figures
+*.pdf
+*.PDF
+paper/**/*.png
+paper/**/*.jpg
+paper/**/*.jpeg
+paper/**/*.gif
+paper/**/*.bmp
+paper/**/*.tif
+paper/**/*.tiff
+paper/**/*.svg
+paper/**/*.webp
+paper/**/*.eps
+
+### LaTeX build artifacts
+*.aux
+*.bbl
+*.blg
+*.log
+*.out
+*.spl
+*.toc
+*.lof
+*.lot
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.nav
+*.snm
+*.vrb
+*.bak
+*.bak.truncated
+*.tex.bak*
